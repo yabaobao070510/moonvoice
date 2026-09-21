@@ -4,10 +4,12 @@
 
 ## 当前状态
 
-- **阶段**：D1–D4 完成（audio / resample / feature / vad+segments 全部实现并测试）
+- **阶段**：D1–D5 完成（五个库包 + 两个技能 + SKILL.md + README 全部就位）
 - **赛期**：2026 MoonBit 黑客松 · 九月赛，**2026-09-30 24:00 截止报名与验收**
-- **测试**：**60 项 × 三后端（wasm/js/native）全绿**；`moon check` 0 警告
-- **剩余**：cmd 技能壳 + SKILL.md + 发布 mooncakes + README/文档 + 浏览器 demo + 开发复盘
+- **测试**：**54 项 × 四后端（wasm / wasm-gc / js / native）全绿**；`moon check` 0 警告
+- **发布链路**：`moon package` 已验证通过（产物 `_build/publish/yabaobao-moonvoice-0.1.0.zip`），
+  只差 `moon register` 账号即可 `moon publish`
+- **剩余**：发布 mooncakes（需账号）+ 浏览器 demo（可选）+ 真实数据回归 + 开发复盘
 - **阻塞项**（需用户本人）：
   1. `moon register` / `moon login`（发布技能必须）
   2. GitHub 公开仓库（报名要填 GitHub ID）
@@ -21,7 +23,8 @@
 | D1 | `audio`：WAV/RIFF 编解码 + 样本表示 | 23 项测试（含 8 项 libsndfile 金标） |
 | D2 | `resample`：多相窗函数 sinc 重采样 | 38 项测试（含 scipy 对拍、指标快照） |
 | D3 | `feature`：FFT + 功率谱/谱平坦度/谱熵 | 47 项测试（含 numpy 金标） |
-| D4 | `vad` + `segments`：三引擎 VAD + 段模型 | 60 项测试（合成基准四类场景） |
+| D4 | `vad` + `segments`：三引擎 VAD + 段模型 | 合成基准四类场景 |
+| D5 | `cmd/vad`、`cmd/resample` 技能 + SKILL.md + README | 端到端实测 + libsndfile 复核 |
 
 ### VAD 关键实测（详见 vad/vad.mbt 注释）
 
