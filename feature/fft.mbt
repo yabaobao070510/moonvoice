@@ -61,11 +61,20 @@ pub fn Fft::spectrum_len(self : Fft) -> Int {
   self.n / 2 + 1
 }
 
-///| 就地 FFT（用查表旋转因子），结果留在 re/im
+///| 就地 FFT（用查表旋转因子），结果留在内部缓冲
 fn Fft::transform(self : Fft) -> Unit {
+  self.transform_with(self.re, self.im)
+}
+
+///|
+/// 对**调用者提供的缓冲**做就地 FFT。
+/// STFT 需要把自己的帧缓冲直接送进来跑，不想为每帧再拷贝一次。
+pub fn Fft::transform_with(
+  self : Fft,
+  re : Array[Double],
+  im : Array[Double],
+) -> Unit {
   let n = self.n
-  let re = self.re
-  let im = self.im
   let cos_tab = self.cos_tab
   let sin_tab = self.sin_tab
   // 位反转置换
@@ -114,6 +123,27 @@ fn Fft::transform(self : Fft) -> Unit {
       i = i + len
     }
     len = len * 2
+  }
+}
+
+///|
+/// 逆变换。用共轭技巧实现：conj → 正变换 → conj → 除以 n。
+/// 比另写一套正指数蝶形短得多，也不容易在符号上出错——
+/// 正确性由"STFT 完全重构"这条测试兜底。
+pub fn Fft::inverse_transform_with(
+  self : Fft,
+  re : Array[Double],
+  im : Array[Double],
+) -> Unit {
+  let n = self.n
+  for i = 0; i < n; i = i + 1 {
+    im.unsafe_set(i, -im.unsafe_get(i))
+  }
+  self.transform_with(re, im)
+  let scale = 1.0 / n.to_double()
+  for i = 0; i < n; i = i + 1 {
+    re.unsafe_set(i, re.unsafe_get(i) * scale)
+    im.unsafe_set(i, -im.unsafe_get(i) * scale)
   }
 }
 

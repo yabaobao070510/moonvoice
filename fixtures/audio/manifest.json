@@ -117,6 +117,22 @@
       "expected_source": "numpy.fft.rfft + 与实现逐字相同的 Hann 窗",
       "spectral_flatness": 2.7150413466218175e-07,
       "spectral_entropy": 0.31431912526310235
+    },
+    {
+      "kind": "spectral",
+      "windows": [
+        "hann",
+        "hamming",
+        "blackman",
+        "bartlett",
+        "kaiser6"
+      ],
+      "stft": {
+        "n_fft": 32,
+        "hop": 8,
+        "frames": 9
+      },
+      "expected_source": "scipy.signal.windows + numpy.fft.rfft"
     }
   ]
 }

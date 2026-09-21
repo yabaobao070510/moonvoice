@@ -9,6 +9,8 @@
 /// - **窗函数 sinc（Kaiser 窗）**：阻带衰减由 β 控制，过渡带宽度由抽头数控制。
 ///   截止频率取输出 Nyquist（0.5/max(L,M)），所以通带内平坦、Nyquist 处 -6 dB，
 ///   再往上是阻带——这正是抽取需要的抗混叠形状。
+/// - **复用 feature 的数学原语**：Kaiser 窗用的 I0 与窗函数同一份实现，
+///   不在这里再抄一份（窗函数库在 feature 包）。
 /// - **边界补零**：与 scipy.signal.resample_poly 的默认约定一致，便于对拍。
 /// - 系数算在 Double、存 Float，累加用 Double：f32 累加 150 抽头仍够用，
 ///   但 Double 累加让"与参照实现比对"的信噪比不受累加误差污染。
@@ -51,21 +53,6 @@ pub fn gcd(a : Int, b : Int) -> Int {
   x
 }
 
-///| 第 0 类修正贝塞尔函数 I0(x)，级数展开足够（x ≤ 12 时 30 项远超精度需求）
-fn bessel_i0(x : Double) -> Double {
-  let half = x / 2.0
-  let mut term = 1.0
-  let mut sum = 1.0
-  for k = 1; k < 40; k = k + 1 {
-    term = term * (half / k.to_double()) * (half / k.to_double())
-    sum = sum + term
-    if term < 1.0e-18 * sum {
-      break
-    }
-  }
-  sum
-}
-
 ///| 归一化 sinc：sin(πx)/(πx)
 fn sinc(x : Double) -> Double {
   if x == 0.0 {
@@ -94,7 +81,7 @@ fn design_polyphase(
   let coeffs : FixedArray[Float] = FixedArray::make(up * taps, 0.0)
   // Kaiser：A > 50 dB 时 beta = 0.1102(A - 8.7)
   let beta = 0.1102 * (atten_db - 8.7)
-  let denom = bessel_i0(beta)
+  let denom = @feature.bessel_i0(beta)
   let fc = 0.5 / max_rate.to_double() // 截止（周期/上采样样本）
   let gain = up.to_double() // 补偿插零带来的能量下降
   for phase = 0; phase < up; phase = phase + 1 {
@@ -103,7 +90,7 @@ fn design_polyphase(
       if n < n_taps {
         let t = (n - center).to_double()
         let u = 2.0 * n.to_double() / (n_taps - 1).to_double() - 1.0
-        let w = bessel_i0(beta * (1.0 - u * u).sqrt()) / denom
+        let w = @feature.bessel_i0(beta * (1.0 - u * u).sqrt()) / denom
         let h = gain * 2.0 * fc * sinc(2.0 * fc * t) * w
         coeffs[phase * taps + k] = Float::from_double(h)
       }
