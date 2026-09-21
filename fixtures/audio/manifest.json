@@ -2,6 +2,7 @@
   "cases": [
     {
       "name": "sine_u8_mono",
+      "kind": "wav",
       "codec": "pcm_u8",
       "channels": 1,
       "sample_rate": 8000,
@@ -11,6 +12,7 @@
     },
     {
       "name": "sine_s16_mono",
+      "kind": "wav",
       "codec": "pcm_s16le",
       "channels": 1,
       "sample_rate": 16000,
@@ -20,6 +22,7 @@
     },
     {
       "name": "sine_s24_mono",
+      "kind": "wav",
       "codec": "pcm_s24le",
       "channels": 1,
       "sample_rate": 16000,
@@ -29,6 +32,7 @@
     },
     {
       "name": "sine_s32_mono",
+      "kind": "wav",
       "codec": "pcm_s32le",
       "channels": 1,
       "sample_rate": 16000,
@@ -38,6 +42,7 @@
     },
     {
       "name": "sine_f32_mono",
+      "kind": "wav",
       "codec": "pcm_f32le",
       "channels": 1,
       "sample_rate": 16000,
@@ -47,6 +52,7 @@
     },
     {
       "name": "sine_f64_mono",
+      "kind": "wav",
       "codec": "pcm_f64le",
       "channels": 1,
       "sample_rate": 16000,
@@ -56,12 +62,47 @@
     },
     {
       "name": "sine_s16_stereo",
+      "kind": "wav",
       "codec": "pcm_s16le",
       "channels": 2,
       "sample_rate": 16000,
       "frames": 400,
       "bytes": 1678,
       "expected_source": "libsndfile (soundfile) 独立解码"
+    },
+    {
+      "name": "resample_48k_to_16k",
+      "kind": "resample",
+      "from_rate": 48000,
+      "to_rate": 16000,
+      "up": 1,
+      "down": 3,
+      "in_frames": 2400,
+      "out_frames": 800,
+      "tones_hz": [
+        220.0,
+        700.0,
+        1500.0,
+        3000.0
+      ],
+      "expected_source": "scipy.signal.resample_poly（默认 Kaiser 设计）"
+    },
+    {
+      "name": "resample_44100_to_48000",
+      "kind": "resample",
+      "from_rate": 44100,
+      "to_rate": 48000,
+      "up": 160,
+      "down": 147,
+      "in_frames": 2205,
+      "out_frames": 2400,
+      "tones_hz": [
+        220.0,
+        700.0,
+        1500.0,
+        3000.0
+      ],
+      "expected_source": "scipy.signal.resample_poly（默认 Kaiser 设计）"
     }
   ]
 }

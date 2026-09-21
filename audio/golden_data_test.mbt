@@ -1,8 +1,7 @@
 ///|
 /// **自动生成，请勿手改** —— 由 tools/golden/gen_audio_golden.py 生成。
 ///
-/// fixture 来源：ffmpeg（7 个格式）
-/// 期望值来源：libsndfile / soundfile 独立解码（与被测实现无共享代码）
+/// fixture 来源：ffmpeg；期望值来源：libsndfile —— 与被测实现无共享代码
 /// 内嵌而非读文件：wasm 沙箱无文件系统，三后端要跑同一套金标。
 
 ///| 8-bit 无符号：ffmpeg 生成，libsndfile 解码得到期望值
