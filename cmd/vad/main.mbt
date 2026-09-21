@@ -33,6 +33,7 @@ struct Options {
   pad_ms : Int
   target_rate : Int // 0 表示不重采样
   indent : Int // 0 表示紧凑输出
+  speech_only : Bool // 输出"去掉静音的干净语音"而不是 JSON
   help : Bool
 }
 
@@ -75,6 +76,7 @@ fn parse_args(args : Array[String]) -> Options raise CliError {
     pad_ms: 60,
     target_rate: 0,
     indent: 0,
+    speech_only: false,
     help: false,
   }
   let mut i = 0
@@ -117,6 +119,9 @@ fn parse_args(args : Array[String]) -> Options raise CliError {
     } else if a == "--resample" {
       opts = { ..opts, target_rate: parse_int(a, next) }
       i = i + 2
+    } else if a == "--speech-only" {
+      opts = { ..opts, speech_only: true }
+      i = i + 1
     } else if a == "--indent" {
       opts = { ..opts, indent: parse_int(a, next) }
       i = i + 2
@@ -153,6 +158,12 @@ fn run() -> Unit raise {
     pad_ms=opts.pad_ms,
   )
   let result = @mbvad.build_result(audio, params, opts.engine)
+  if opts.speech_only {
+    // 只保留语音：检出 → 切片 → 拼接（原语组合，见 vad.speech_only）
+    let joined = @mbvad.speech_only(audio, result.segments())
+    @miniio.stdout.write(@audio.encode_wav(joined))
+    return
+  }
   let json = if opts.indent > 0 {
     result.to_json().stringify(indent=opts.indent)
   } else {

@@ -106,3 +106,71 @@ test "API: 重采样与分段可以各自单独调用、组合使用" {
     fail("重采样不应改变时间轴，实际起点 " + segs[0].start_ms().to_string())
   }
 }
+
+///| 用法四：原语组合 —— 检出语音段后把它们拼成"干净人声"
+test "API: 检出 + 切片 + 拼接 = 去掉静音的干净语音" {
+  let audio = demo_audio()
+  let segs = @vad.detect_segments(
+    audio,
+    @vad.VadParams::default(),
+    @vad.VadEngine::Fused,
+  )
+  if segs.length() == 0 {
+    fail("应检出语音段")
+  }
+  // 单段提取
+  let parts = @vad.extract_segments(audio, segs)
+  assert_eq(parts.length(), segs.length())
+  assert_eq(parts[0].frames(), segs[0].duration_ms() * 16000 / 1000)
+  // 拼成一条：长度应等于各段之和，且短于原音频（静音被去掉）
+  let joined = @vad.speech_only(audio, segs)
+  let expected = @segments.total_speech_ms(segs) * 16000 / 1000
+  if (joined.frames() - expected).abs() > 8 {
+    fail(
+      "拼接长度 " +
+      joined.frames().to_string() +
+      " 与各段之和 " +
+      expected.to_string() +
+      " 不符",
+    )
+  }
+  if joined.frames() >= audio.frames() {
+    fail("去掉静音后应短于原音频")
+  }
+  // 采样率与声道保持不变
+  assert_eq(joined.sample_rate(), 16000)
+  assert_eq(joined.channels(), 1)
+}
+
+///| 用法五：音频原语可脱离语音场景单独组合
+test "API: 音频原语（切片/拼接/增益/归一化/混音）独立可用" {
+  let a = demo_audio()
+  // 切片 + 增益
+  let head = a.slice_ms(0, 200)
+  assert_eq(head.frames(), 3200)
+  let louder = head.apply_gain_db(6.0)
+  if louder.peak() <= head.peak() {
+    fail("+6 dB 后峰值应变大")
+  }
+  // 归一化：峰值应落到目标附近
+  let norm = louder.normalize_peak(target=0.5)
+  if (norm.peak() - 0.5).abs() > 1.0e-4 {
+    fail("归一化后峰值应为 0.5，实际 " + norm.peak().to_string())
+  }
+  // 拼接：两段相同音频拼起来，长度翻倍
+  let doubled = @audio.Audio::concat([head, head])
+  assert_eq(doubled.frames(), head.frames() * 2)
+  // 混音：a 与静音按 0.5 混，峰值应减半
+  let silence = head.apply_gain_db(-200.0)
+  let mixed = @audio.Audio::mix(head, silence, ratio=0.5)
+  if (mixed.peak() - head.peak() * 0.5).abs() > 1.0e-4 {
+    fail("混音后峰值应减半")
+  }
+  // 错误路径：长度不一致的混音必须报错而不是静默截断
+  let raised = try @audio.Audio::mix(head, a, ratio=0.5) catch {
+    _ => true
+  } noraise {
+    _ => false
+  }
+  assert_true(raised)
+}

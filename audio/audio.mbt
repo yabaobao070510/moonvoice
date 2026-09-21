@@ -285,3 +285,178 @@ pub fn Audio::to_mono(self : Audio) -> FixedArray[Float] {
   }
   out
 }
+
+// ---------------------------------------------------------------------------
+// 可组合原语：切片 / 拼接 / 增益 / 归一化 / 混音
+//
+// 设计原则：这里只放**与"语音"无关**的音频操作。
+// 语音相关的组合（如"只保留语音段"）放在 vad 包，由这些原语拼出来——
+// 这样原语可以脱离语音场景复用（音频编辑、数据集制作、播放器……）。
+// ---------------------------------------------------------------------------
+
+///| 按帧切片（左闭右开，自动夹到合法范围）
+pub fn Audio::slice_frames(self : Audio, start : Int, end : Int) -> Audio {
+  let frames = self.frames()
+  let s = if start < 0 {
+    0
+  } else if start > frames {
+    frames
+  } else {
+    start
+  }
+  let e = if end < s {
+    s
+  } else if end > frames {
+    frames
+  } else {
+    end
+  }
+  let n = (e - s) * self.channels
+  let out : FixedArray[Float] = FixedArray::make(n, 0.0)
+  let base = s * self.channels
+  for i = 0; i < n; i = i + 1 {
+    out[i] = self.samples[base + i]
+  }
+  {
+    sample_rate: self.sample_rate,
+    channels: self.channels,
+    samples: out,
+    extra_chunks: [],
+    source_format: self.source_format,
+  }
+}
+
+///| 按毫秒切片
+pub fn Audio::slice_ms(self : Audio, start_ms : Int, end_ms : Int) -> Audio {
+  let to_frame = fn(ms : Int) -> Int {
+    ms * self.sample_rate / 1000
+  }
+  self.slice_frames(to_frame(start_ms), to_frame(end_ms))
+}
+
+///|
+/// 顺序拼接。要求采样率与声道数一致——不一致时**报错而不是偷偷重采样**：
+/// 隐式转换会让调用者不知道自己的数据被改过。
+pub fn Audio::concat(parts : Array[Audio]) -> Audio raise AudioError {
+  if parts.length() == 0 {
+    raise InvalidFormat("concat: 空的片段列表")
+  }
+  let first = parts[0]
+  let rate = first.sample_rate
+  let ch = first.channels
+  let mut total = 0
+  for p in parts {
+    if p.sample_rate != rate || p.channels != ch {
+      raise InvalidFormat(
+        "concat: 采样率/声道不一致（" +
+        rate.to_string() +
+        "Hz/" +
+        ch.to_string() +
+        "ch vs " +
+        p.sample_rate.to_string() +
+        "Hz/" +
+        p.channels.to_string() +
+        "ch）",
+      )
+    }
+    total = total + p.samples.length()
+  }
+  let out : FixedArray[Float] = FixedArray::make(total, 0.0)
+  let mut pos = 0
+  for p in parts {
+    for i = 0; i < p.samples.length(); i = i + 1 {
+      out[pos + i] = p.samples[i]
+    }
+    pos = pos + p.samples.length()
+  }
+  {
+    sample_rate: rate,
+    channels: ch,
+    samples: out,
+    extra_chunks: [],
+    source_format: first.source_format,
+  }
+}
+
+///| 施加增益（dB）。可选钳位到 [-1, 1]（默认不钳位，避免无声损失峰值）
+pub fn Audio::apply_gain_db(self : Audio, db : Double, clamp? : Bool = false) -> Audio {
+  let g = @math.pow(10.0, db / 20.0)
+  let n = self.samples.length()
+  let out : FixedArray[Float] = FixedArray::make(n, 0.0)
+  for i = 0; i < n; i = i + 1 {
+    let v = self.samples[i].to_double() * g
+    out[i] = Float::from_double(
+      if clamp {
+        if v > 1.0 {
+          1.0
+        } else if v < -1.0 {
+          -1.0
+        } else {
+          v
+        }
+      } else {
+        v
+      },
+    )
+  }
+  {
+    sample_rate: self.sample_rate,
+    channels: self.channels,
+    samples: out,
+    extra_chunks: self.extra_chunks,
+    source_format: self.source_format,
+  }
+}
+
+///| 峰值（绝对值最大）
+pub fn Audio::peak(self : Audio) -> Double {
+  let mut peak = 0.0
+  for i = 0; i < self.samples.length(); i = i + 1 {
+    let a = if self.samples[i].to_double() < 0.0 {
+      -self.samples[i].to_double()
+    } else {
+      self.samples[i].to_double()
+    }
+    if a > peak {
+      peak = a
+    }
+  }
+  peak
+}
+
+///|
+/// 峰值归一化到 `target`（默认 0.98，留一点余量给编码与后续滤波）。
+/// 典型用法：拼接/混音之后、编码之前调一次，避免削波。
+pub fn Audio::normalize_peak(self : Audio, target? : Double = 0.98) -> Audio {
+  let p = self.peak()
+  if p <= 0.0 {
+    return self
+  }
+  self.apply_gain_db(20.0 * @math.log10(target / p))
+}
+
+///|
+/// 两路等长混音（`ratio` 是 b 的比例，默认 0.5）。
+/// 不做自动增益补偿——要什么比例由调用者决定，混完可以用 normalize_peak。
+pub fn Audio::mix(a : Audio, b : Audio, ratio? : Double = 0.5) -> Audio raise AudioError {
+  if a.sample_rate != b.sample_rate || a.channels != b.channels {
+    raise InvalidFormat("mix: 采样率/声道不一致")
+  }
+  if a.samples.length() != b.samples.length() {
+    raise InvalidFormat("mix: 长度不一致")
+  }
+  let n = a.samples.length()
+  let out : FixedArray[Float] = FixedArray::make(n, 0.0)
+  for i = 0; i < n; i = i + 1 {
+    out[i] = Float::from_double(
+      a.samples[i].to_double() * (1.0 - ratio) + b.samples[i].to_double() * ratio,
+    )
+  }
+  {
+    sample_rate: a.sample_rate,
+    channels: a.channels,
+    samples: out,
+    extra_chunks: [],
+    source_format: a.source_format,
+  }
+}

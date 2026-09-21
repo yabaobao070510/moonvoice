@@ -523,3 +523,34 @@ pub fn detect_segments(
   let frames = analyze_frames(mono, audio.sample_rate(), params, engine)
   frames_to_segments(frames, mono, audio.sample_rate(), params)
 }
+
+// ---------------------------------------------------------------------------
+// 组合：把原语拼成"能用的产物"
+//
+// 这两条不是新算法，是 audio 原语 + segments 的组合——
+// 放在这里是因为它们依赖"语音段"这个概念，而原语本身不依赖。
+// ---------------------------------------------------------------------------
+
+///| 把每个语音段单独切出来（保留采样率与格式标记）
+pub fn extract_segments(
+  audio : @audio.Audio,
+  segs : Array[@segments.Segment],
+) -> Array[@audio.Audio] {
+  let out : Array[@audio.Audio] = []
+  for s in segs {
+    out.push(audio.slice_ms(s.start_ms(), s.end_ms()))
+  }
+  out
+}
+
+///|
+/// 只保留语音：把语音段顺序拼成一条音频（去掉静音）。
+///
+/// 典型用途：把一段带停顿的录音变成"干净人声"，直接喂给识别器或配音流水线。
+/// 拼接要求各段采样率/声道一致——它们都来自同一路输入，所以恒成立。
+pub fn speech_only(
+  audio : @audio.Audio,
+  segs : Array[@segments.Segment],
+) -> @audio.Audio raise @audio.AudioError {
+  @audio.Audio::concat(extract_segments(audio, segs))
+}
