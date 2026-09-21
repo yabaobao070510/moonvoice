@@ -227,7 +227,9 @@ moon test                                  # 四后端均可跑同一套金标
 ## 开发状态
 
 见 [`PROJECT_STATE.md`](PROJECT_STATE.md)（进度、决策记录、实测事实与坑）、
+[`docs/retrospective.md`](docs/retrospective.md)（**开发复盘**：架构决策、AI 工具的作用与出错记录）、
 [`docs/known-issues.md`](docs/known-issues.md)（上游编译器缺陷与绕行）、
+[`docs/one-pager.md`](docs/one-pager.md)（一页项目说明）、
 [`proposals/moonbit-hackathon-2026.md`](proposals/moonbit-hackathon-2026.md)（立项方案）。
 
 ## 许可
