@@ -103,6 +103,20 @@
         3000.0
       ],
       "expected_source": "scipy.signal.resample_poly（默认 Kaiser 设计）"
+    },
+    {
+      "name": "fft_tones",
+      "kind": "feature",
+      "n_fft": 512,
+      "sample_rate": 16000,
+      "tones_hz": [
+        440.0,
+        1500.0,
+        3300.0
+      ],
+      "expected_source": "numpy.fft.rfft + 与实现逐字相同的 Hann 窗",
+      "spectral_flatness": 2.7150413466218175e-07,
+      "spectral_entropy": 0.31431912526310235
     }
   ]
 }

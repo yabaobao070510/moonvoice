@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""生成 audio / resample 两个包的金标测试。
+"""生成 audio / resample / feature 三个包的金标测试。
 
 设计原则（同时写进 README 与开发复盘）：
 
 1. **参照物必须独立**。WAV fixture 由 ffmpeg 生成、期望值由 libsndfile 独立解码；
-   重采样期望值由 scipy.signal.resample_poly 给出。都不是"拿自己的公式算一遍再自我验证"。
+   重采样期望值由 scipy.signal.resample_poly 给出；频谱期望值由 numpy.fft 给出。
+   都不是"拿自己的公式算一遍再自我验证"。
 2. **测试不依赖文件 I/O**。数据以十六进制/字面量内嵌进生成的 .mbt 源码，
    这样 wasm / js / native 三个后端都能跑同一套金标（wasm 沙箱里没有文件系统）。
-3. **可复现**。fixture 同时落盘到 fixtures/audio/，任何人可重跑本脚本复核。
+3. **可复现**。WAV fixture 同时落盘到 fixtures/audio/，任何人可重跑本脚本复核。
 
 用法：
     python tools/golden/gen_audio_golden.py
@@ -26,8 +27,9 @@ import soundfile as sf
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures" / "audio"
-OUT_MBT = ROOT / "audio" / "golden_data_test.mbt"
+AUDIO_MBT = ROOT / "audio" / "golden_data_test.mbt"
 RESAMPLE_MBT = ROOT / "resample" / "golden_data_test.mbt"
+FEATURE_MBT = ROOT / "feature" / "golden_data_test.mbt"
 OUT_META = FIXTURES / "manifest.json"
 
 # (名称, ffmpeg 采样格式, 声道, 采样率, 说明)
@@ -53,7 +55,13 @@ RESAMPLE_CASES = [
 TONE_HZ = [220.0, 700.0, 1500.0, 3000.0]
 TONE_AMP = [0.4, 0.3, 0.2, 0.1]
 
-WAV_HELPERS = r'''
+# 频谱金标
+FFT_N = 512
+FFT_RATE = 16000
+FFT_FREQS = [440.0, 1500.0, 3300.0]
+FFT_AMPS = [0.5, 0.3, 0.2]
+
+HELPERS = r'''
 ///| 十六进制字符串 → 字节（解析失败即测试失败，不静默产出坏数据）
 fn unhex(s : String) -> Bytes raise {
   let digits = "0123456789abcdef".to_array()
@@ -83,6 +91,14 @@ fn hex_val(digits : Array[Char], c : Char) -> Int raise {
 '''
 
 
+def fmt_double(v: float) -> str:
+    if v == 0.0:
+        return "0.0"
+    if v == int(v) and abs(v) < 1e15:
+        return f"{v:.1f}"
+    return repr(float(v))
+
+
 def ffmpeg_bin() -> str:
     for name in ("ffmpeg", "ffmpeg.exe"):
         try:
@@ -105,14 +121,6 @@ def make_wav_fixture(ff: str, name: str, codec: str, channels: int, rate: int) -
     return path
 
 
-def fmt_double(v: float) -> str:
-    if v == 0.0:
-        return "0.0"
-    if v == int(v) and abs(v) < 1e15:
-        return f"{v:.1f}"
-    return repr(float(v))
-
-
 def emit_wav_section(manifest: list) -> str:
     ff = ffmpeg_bin()
     blocks: list[str] = []
@@ -133,19 +141,18 @@ def emit_wav_section(manifest: list) -> str:
             "expected_source": "libsndfile (soundfile) 独立解码",
         })
         values = ", ".join(fmt_double(v) for v in expected)
-        head = "\n///| " + desc + "：ffmpeg 生成，libsndfile 解码得到期望值\n"
         blocks.append(
-            head
-            + "fn golden_" + name + "_wav() -> Bytes raise {\n"
-            + '  unhex("' + raw.hex() + '")\n'
-            + "}\n\n"
-            + "fn golden_" + name + "_expected() -> Array[Double] {\n"
-            + "  [" + values + "]\n"
-            + "}\n\n"
-            + "///| (采样率, 声道数, 帧数)\n"
-            + "fn golden_" + name + "_meta() -> (Int, Int, Int) {\n"
-            + f"  ({rate}, {channels}, {len(samples)})\n"
-            + "}\n"
+            "\n///| " + desc + "：ffmpeg 生成，libsndfile 解码得到期望值\n"
+            "fn golden_" + name + "_wav() -> Bytes raise {\n"
+            '  unhex("' + raw.hex() + '")\n'
+            "}\n\n"
+            "fn golden_" + name + "_expected() -> Array[Double] {\n"
+            "  [" + values + "]\n"
+            "}\n\n"
+            "///| (采样率, 声道数, 帧数)\n"
+            "fn golden_" + name + "_meta() -> (Int, Int, Int) {\n"
+            f"  ({rate}, {channels}, {len(samples)})\n"
+            "}\n"
         )
     return "".join(blocks)
 
@@ -182,32 +189,78 @@ def emit_resample_section(manifest: list) -> str:
         })
         ints = ", ".join(str(int(v)) for v in xi)
         floats = ", ".join(fmt_double(v) for v in y)
-        head = (
-            "\n///| " + str(fs_in) + " Hz → " + str(fs_out) + " Hz 的输入："
-            "int16 量化值（除以 32768 还原）\n"
-        )
         blocks.append(
-            head
-            + "fn golden_" + name + "_input() -> Array[Int] {\n"
-            + "  [" + ints + "]\n"
-            + "}\n\n"
-            + "///| scipy.signal.resample_poly 的输出（独立参照实现）\n"
-            + "fn golden_" + name + "_expected() -> Array[Double] {\n"
-            + "  [" + floats + "]\n"
-            + "}\n\n"
-            + "///| (输入采样率, 输出采样率)\n"
-            + "fn golden_" + name + "_rates() -> (Int, Int) {\n"
-            + f"  ({fs_in}, {fs_out})\n"
-            + "}\n"
+            "\n///| " + str(fs_in) + " Hz → " + str(fs_out)
+            + " Hz 的输入：int16 量化值（除以 32768 还原）\n"
+            "fn golden_" + name + "_input() -> Array[Int] {\n"
+            "  [" + ints + "]\n"
+            "}\n\n"
+            "///| scipy.signal.resample_poly 的输出（独立参照实现）\n"
+            "fn golden_" + name + "_expected() -> Array[Double] {\n"
+            "  [" + floats + "]\n"
+            "}\n\n"
+            "///| (输入采样率, 输出采样率)\n"
+            "fn golden_" + name + "_rates() -> (Int, Int) {\n"
+            f"  ({fs_in}, {fs_out})\n"
+            "}\n"
         )
     return "".join(blocks)
+
+
+def fft_signal():
+    n = np.arange(FFT_N)
+    t = n / float(FFT_RATE)
+    x = np.zeros(FFT_N)
+    for f, a in zip(FFT_FREQS, FFT_AMPS):
+        x += a * np.sin(2 * np.pi * f * t)
+    # 量化到 1/10000，保证两侧输入完全一致
+    xi = np.round(x * 10000.0).astype(np.int32)
+    return xi, xi.astype(np.float64) / 10000.0
+
+
+def emit_feature_section(manifest: list) -> str:
+    xi, x = fft_signal()
+    # 与 MoonBit 侧逐字相同的 Hann 窗定义
+    w = 0.5 * (1.0 - np.cos(2 * np.pi * np.arange(FFT_N) / (FFT_N - 1)))
+    spec = np.abs(np.fft.rfft(x * w)) ** 2
+
+    # 谱平坦度 / 谱熵（bin 1..100），公式与实现一致，由 numpy 复算
+    band = np.maximum(spec[1:101], 1e-30)
+    flatness = float(np.exp(np.mean(np.log(band))) / np.mean(band))
+    p = band / band.sum()
+    entropy = float(-np.sum(p * np.log(p)) / np.log(len(band)))
+
+    manifest.append({
+        "name": "fft_tones",
+        "kind": "feature",
+        "n_fft": FFT_N,
+        "sample_rate": FFT_RATE,
+        "tones_hz": FFT_FREQS,
+        "expected_source": "numpy.fft.rfft + 与实现逐字相同的 Hann 窗",
+        "spectral_flatness": flatness,
+        "spectral_entropy": entropy,
+    })
+
+    ints = ", ".join(str(int(v)) for v in xi)
+    powers = ", ".join(repr(float(v)) for v in spec)
+    return (
+        "\n///| 三个单音叠加（440/1500/3300 Hz），量化到 1/10000\n"
+        "fn golden_fft_input() -> Array[Int] {\n  [" + ints + "]\n}\n\n"
+        "///| numpy.fft.rfft 的功率谱（|X|^2，未归一化）\n"
+        "fn golden_fft_expected_power() -> Array[Double] {\n  [" + powers + "]\n}\n\n"
+        "///| bin 1..100 上的谱平坦度（numpy 复算）\n"
+        "fn golden_fft_expect_flatness() -> Double {\n  " + repr(flatness) + "\n}\n\n"
+        "///| bin 1..100 上的归一化谱熵（numpy 复算）\n"
+        "fn golden_fft_expect_entropy() -> Double {\n  " + repr(entropy) + "\n}\n"
+    )
 
 
 def main() -> None:
     FIXTURES.mkdir(parents=True, exist_ok=True)
     manifest: list = []
 
-    header = "\n".join([
+    # --- audio：WAV 编解码 ---
+    audio_header = "\n".join([
         "///|",
         "/// **自动生成，请勿手改** —— 由 tools/golden/gen_audio_golden.py 生成。",
         "///",
@@ -215,11 +268,11 @@ def main() -> None:
         "/// 内嵌而非读文件：wasm 沙箱无文件系统，三后端要跑同一套金标。",
         "",
     ])
-
-    OUT_MBT.write_text(
-        header + emit_wav_section(manifest) + WAV_HELPERS, encoding="utf-8"
+    AUDIO_MBT.write_text(
+        audio_header + emit_wav_section(manifest) + HELPERS, encoding="utf-8"
     )
 
+    # --- resample：对比 scipy.signal.resample_poly ---
     resample_header = "\n".join([
         "///|",
         "/// **自动生成，请勿手改** —— 由 tools/golden/gen_audio_golden.py 生成。",
@@ -233,12 +286,25 @@ def main() -> None:
         resample_header + emit_resample_section(manifest), encoding="utf-8"
     )
 
+    # --- feature：对比 numpy.fft ---
+    feature_header = "\n".join([
+        "///|",
+        "/// **自动生成，请勿手改** —— 由 tools/golden/gen_audio_golden.py 生成。",
+        "///",
+        "/// 期望值来自 numpy.fft.rfft（独立参照实现），窗函数定义与实现逐字一致。",
+        "",
+    ])
+    FEATURE_MBT.write_text(
+        feature_header + emit_feature_section(manifest), encoding="utf-8"
+    )
+
     OUT_META.write_text(
         json.dumps({"cases": manifest}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"生成 {OUT_MBT.relative_to(ROOT)}（{len(WAV_CASES)} 个 WAV fixture）")
+    print(f"生成 {AUDIO_MBT.relative_to(ROOT)}（{len(WAV_CASES)} 个 WAV fixture）")
     print(f"生成 {RESAMPLE_MBT.relative_to(ROOT)}（{len(RESAMPLE_CASES)} 个重采样金标）")
+    print(f"生成 {FEATURE_MBT.relative_to(ROOT)}（1 个频谱金标）")
     print(f"生成 {OUT_META.relative_to(ROOT)}")
 
 
