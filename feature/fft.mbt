@@ -20,10 +20,15 @@
 ///   2. **缓冲复用**：时域/频域缓冲归分析器所有，逐帧调用零分配。
 pub struct Fft {
   n : Int
-  re : FixedArray[Double]
-  im : FixedArray[Double]
-  cos_tab : FixedArray[Double]
-  sin_tab : FixedArray[Double]
+  // 内部缓冲用 Array 而不是 FixedArray：Array 提供 unsafe_get/unsafe_set，
+  // 蝶形里每个点要读写 8 次，逐次边界检查的代价测出来是实打实的。
+  re : Array[Double]
+  im : Array[Double]
+  cos_tab : Array[Double]
+  sin_tab : Array[Double]
+  /// Hann 窗系数。窗只依赖 n，构造时算一次即可——
+  /// 逐帧重算意味着每帧 512 次 cos()，那是白白烧掉的算力。
+  window : Array[Double]
 }
 
 ///| 构造。`n` 必须是 2 的幂。
@@ -32,20 +37,19 @@ pub fn Fft::new(n : Int) -> Fft {
     abort("Fft::new: n 必须是 2 的幂")
   }
   let half = n / 2
-  let cos_tab : FixedArray[Double] = FixedArray::make(half, 1.0)
-  let sin_tab : FixedArray[Double] = FixedArray::make(half, 0.0)
+  let cos_tab : Array[Double] = Array::make(half, 1.0)
+  let sin_tab : Array[Double] = Array::make(half, 0.0)
   for k = 0; k < half; k = k + 1 {
     let ang = -2.0 * @math.PI * k.to_double() / n.to_double()
     cos_tab[k] = @math.cos(ang)
     sin_tab[k] = @math.sin(ang)
   }
-  {
-    n,
-    re: FixedArray::make(n, 0.0),
-    im: FixedArray::make(n, 0.0),
-    cos_tab,
-    sin_tab,
+  let window : Array[Double] = Array::make(n, 1.0)
+  let denom = (n - 1).to_double()
+  for i = 0; i < n; i = i + 1 {
+    window[i] = 0.5 * (1.0 - @math.cos(2.0 * @math.PI * i.to_double() / denom))
   }
+  { n, re: Array::make(n, 0.0), im: Array::make(n, 0.0), cos_tab, sin_tab, window }
 }
 
 pub fn Fft::size(self : Fft) -> Int {
@@ -62,6 +66,8 @@ fn Fft::transform(self : Fft) -> Unit {
   let n = self.n
   let re = self.re
   let im = self.im
+  let cos_tab = self.cos_tab
+  let sin_tab = self.sin_tab
   // 位反转置换
   let mut j = 0
   for i = 1; i < n; i = i + 1 {
@@ -72,12 +78,12 @@ fn Fft::transform(self : Fft) -> Unit {
     }
     j = j | bit
     if i < j {
-      let tr = re[i]
-      re[i] = re[j]
-      re[j] = tr
-      let ti = im[i]
-      im[i] = im[j]
-      im[j] = ti
+      let tr = re.unsafe_get(i)
+      re.unsafe_set(i, re.unsafe_get(j))
+      re.unsafe_set(j, tr)
+      let ti = im.unsafe_get(i)
+      im.unsafe_set(i, im.unsafe_get(j))
+      im.unsafe_set(j, ti)
     }
   }
   // 蝶形：旋转因子按 k*(n/len) 查表
@@ -88,18 +94,22 @@ fn Fft::transform(self : Fft) -> Unit {
     let mut i = 0
     while i < n {
       let mut idx = 0
-      for k = 0; k < half; k = k + 1 {
-        let wr = self.cos_tab[idx]
-        let wi = self.sin_tab[idx]
-        let ur = re[i + k]
-        let ui = im[i + k]
-        let vr = re[i + k + half] * wr - im[i + k + half] * wi
-        let vi = re[i + k + half] * wi + im[i + k + half] * wr
-        re[i + k] = ur + vr
-        im[i + k] = ui + vi
-        re[i + k + half] = ur - vr
-        im[i + k + half] = ui - vi
+      let mut k = 0
+      while k < half {
+        let wr = cos_tab.unsafe_get(idx)
+        let wi = sin_tab.unsafe_get(idx)
+        let ur = re.unsafe_get(i + k)
+        let ui = im.unsafe_get(i + k)
+        let ar = re.unsafe_get(i + k + half)
+        let ai = im.unsafe_get(i + k + half)
+        let vr = ar * wr - ai * wi
+        let vi = ar * wi + ai * wr
+        re.unsafe_set(i + k, ur + vr)
+        im.unsafe_set(i + k, ui + vi)
+        re.unsafe_set(i + k + half, ur - vr)
+        im.unsafe_set(i + k + half, ui - vi)
         idx = idx + stride
+        k = k + 1
       }
       i = i + len
     }
@@ -114,21 +124,20 @@ pub fn Fft::power_into(self : Fft, x : FixedArray[Float], out : FixedArray[Doubl
   let n = self.n
   let re = self.re
   let im = self.im
-  let last = (n - 1).to_double()
   let m = x.length()
+  let window = self.window
   for i = 0; i < n; i = i + 1 {
     if i < m {
-      let w = 0.5 * (1.0 - @math.cos(2.0 * @math.PI * i.to_double() / last))
-      re[i] = x[i].to_double() * w
+      re.unsafe_set(i, x[i].to_double() * window.unsafe_get(i))
     } else {
-      re[i] = 0.0
+      re.unsafe_set(i, 0.0)
     }
-    im[i] = 0.0
+    im.unsafe_set(i, 0.0)
   }
   self.transform()
   let half = n / 2 + 1
   for i = 0; i < half && i < out.length(); i = i + 1 {
-    out[i] = re[i] * re[i] + im[i] * im[i]
+    out[i] = re.unsafe_get(i) * re.unsafe_get(i) + im.unsafe_get(i) * im.unsafe_get(i)
   }
 }
 
@@ -169,12 +178,12 @@ pub fn fft_in_place(re : FixedArray[Double], im : FixedArray[Double]) -> Unit {
     }
     j = j | bit
     if i < j {
-      let tr = re[i]
-      re[i] = re[j]
-      re[j] = tr
-      let ti = im[i]
-      im[i] = im[j]
-      im[j] = ti
+      let tr = re.unsafe_get(i)
+      re.unsafe_set(i, re.unsafe_get(j))
+      re.unsafe_set(j, tr)
+      let ti = im.unsafe_get(i)
+      im.unsafe_set(i, im.unsafe_get(j))
+      im.unsafe_set(j, ti)
     }
   }
   // 蝶形
