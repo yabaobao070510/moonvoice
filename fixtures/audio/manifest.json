@@ -128,11 +128,20 @@
         "kaiser6"
       ],
       "stft": {
-        "n_fft": 32,
-        "hop": 8,
-        "frames": 9
+        "n_fft": 512,
+        "hop": 128,
+        "frames": 28,
+        "window": "periodic hann"
       },
-      "expected_source": "scipy.signal.windows + numpy.fft.rfft"
+      "mel": {
+        "n_mels": 13,
+        "norm": "slaney",
+        "scale": "slaney"
+      },
+      "mfcc": {
+        "n_mfcc": 13
+      },
+      "expected_source": "scipy.signal.windows + numpy.fft + librosa + scipy.fftpack"
     }
   ]
 }

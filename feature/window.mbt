@@ -34,13 +34,25 @@ pub fn Window::name(self : Window) -> String {
   }
 }
 
-///| 生成窗系数（长度 n）
-pub fn window_coefficients(kind : Window, n : Int) -> FixedArray[Double] {
+///|
+/// 生成窗系数（长度 n）。
+///
+/// `periodic` 决定用哪种定义——这不只是风格问题，**直接决定能不能和生态对上**：
+/// - `periodic = false`（对称，默认）：分母 n-1，两端为零。
+///   滤波器设计用这个，也是"教科书定义"（scipy 的 `sym=True`）。
+/// - `periodic = true`（周期）：分母 n。**STFT 分析必须用这个**——
+///   scipy.signal.stft 与 librosa 默认都是周期窗（`fftbins=True`），
+///   用对称窗算出来的谱与它们有系统性偏差，mel/MFCC 会对不上。
+pub fn window_coefficients(
+  kind : Window,
+  n : Int,
+  periodic? : Bool = false,
+) -> FixedArray[Double] {
   let out : FixedArray[Double] = FixedArray::make(n, 1.0)
   if n <= 1 {
     return out
   }
-  let denom = (n - 1).to_double()
+  let denom = if periodic { n.to_double() } else { (n - 1).to_double() }
   match kind {
     Rectangular => ()
     Hann => {
@@ -93,8 +105,8 @@ pub fn bessel_i0(x : Double) -> Double {
 }
 
 ///| 窗的相干增益（Σw / n）：做幅度谱标定时要用
-pub fn window_coherent_gain(kind : Window, n : Int) -> Double {
-  let w = window_coefficients(kind, n)
+pub fn window_coherent_gain(kind : Window, n : Int, periodic? : Bool = false) -> Double {
+  let w = window_coefficients(kind, n, periodic~)
   let mut sum = 0.0
   for x in w {
     sum = sum + x

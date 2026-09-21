@@ -49,12 +49,8 @@ test "窗函数：矩形窗全 1，且相干增益有物理意义" {
 }
 
 test "STFT：幅度谱与 numpy 逐帧计算一致" {
-  let (n_fft, hop) = golden_stft_meta()
-  let ints = golden_stft_input()
-  let x : FixedArray[Float] = FixedArray::make(ints.length(), 0.0)
-  for i = 0; i < ints.length(); i = i + 1 {
-    x[i] = Float::from_double(ints[i].to_double() / 10000.0)
-  }
+  let (n_fft, hop, _) = golden_stft_meta()
+  let x = golden_signal()
   let stft = @feature.Stft::new(n_fft, hop)
   let mag = stft.magnitude(x)
   let expected = golden_stft_magnitude()

@@ -5,6 +5,8 @@
 /// 这里提供的是"能重构"的完整实现——不是只能画图的那一半。
 ///
 /// 三条设计约定：
+/// - **周期窗**：与 scipy.signal.stft / librosa 一致（它们默认 `fftbins=True`）。
+///   用对称窗会让谱与生态有系统性偏差，mel/MFCC 直接对不上。
 /// - **零填充**：帧不足 n_fft 时补零（与 scipy.signal.stft 一致）
 /// - **完全重构**：`istft(stft(x)) ≈ x`，前提是窗满足 COLA（Hann + 50%~75% 重叠即满足）。
 ///   这条性质本身就是最强的一致性测试，见 stft_test.mbt
@@ -37,7 +39,8 @@ pub fn Stft::new(n_fft : Int, hop : Int, window? : Window = Hann) -> Stft {
     n_fft,
     hop,
     window_kind: window,
-    window: window_coefficients(window, n_fft),
+    // 周期窗：与 scipy.signal.stft / librosa 一致（它们默认 fftbins=True）
+    window: window_coefficients(window, n_fft, periodic=true),
     fft: Fft::new(n_fft),
     frame: Array::make(n_fft, 0.0),
     re: Array::make(n_fft, 0.0),
