@@ -1,3 +1,8 @@
 import {
   "moonbitlang/core/encoding/utf8",
 }
+
+import {
+  "moonbitlang/core/math",
+  "yabaobao/moonvoice/resample",
+} for "test"

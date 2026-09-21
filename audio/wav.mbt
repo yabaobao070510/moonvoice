@@ -51,6 +51,14 @@ fn resolve_format(tag : Int, bits : Int) -> SampleFormat raise AudioError {
   }
 }
 
+///| 是否为整数采样格式（抖动的适用范围）
+fn is_integer_format(f : SampleFormat) -> Bool {
+  match f {
+    U8 | I16 | I24 | I32 => true
+    F32 | F64 => false
+  }
+}
+
 fn bytes_per_sample(f : SampleFormat) -> Int {
   match f {
     U8 => 1
@@ -149,7 +157,7 @@ pub fn decode_wav(bytes : Bytes) -> Audio raise AudioError {
   for i = 0; i < n_samples; i = i + 1 {
     samples[i] = decode_sample(bytes, data_off + i * bps, fmt)
   }
-  Audio::new(rate, n_channels, samples).with_extra_chunks(extras)
+  Audio::new(rate, n_channels, samples).with_extra_chunks(extras).with_source_format(fmt)
 }
 
 ///| 从 Bytes 取一段副本
@@ -232,10 +240,153 @@ fn encode_sample(
   }
 }
 
+///| 编码选项
+pub struct EncodeOptions {
+  /// 目标采样格式
+  format : SampleFormat
+  /// 降位深时是否加 TPDF 抖动。
+  /// 量化误差在音频里听感是"颗粒感"；加 1 LSB 的三角分布抖动后
+  /// 量化误差变成白噪声，主观上明显更干净——这是音频工具的标准做法。
+  dither : Bool
+}
+
+///| 构造编码选项（比结构体字面量更清楚的写法）
+pub fn EncodeOptions::new(format : SampleFormat, dither? : Bool = false) -> EncodeOptions {
+  { format, dither }
+}
+
+///| 编码统计：把"有没有削波"这件事变成可判断的数据，而不是静默钳位
+pub struct EncodeReport {
+  bytes : Bytes
+  /// 被钳位的样本数（输入超出 [-1, 1]）。> 0 说明发生了幅度损失
+  clipped_samples : Int
+  /// 钳位前的峰值绝对值（1.0 = 满刻度）
+  peak : Double
+}
+
+pub fn EncodeReport::bytes(self : EncodeReport) -> Bytes {
+  self.bytes
+}
+
+pub fn EncodeReport::clipped_samples(self : EncodeReport) -> Int {
+  self.clipped_samples
+}
+
+pub fn EncodeReport::peak(self : EncodeReport) -> Double {
+  self.peak
+}
+
+pub fn EncodeReport::has_clipping(self : EncodeReport) -> Bool {
+  self.clipped_samples > 0
+}
+
 ///|
-/// 编码为 WAV 字节流。默认 16-bit PCM（兼容性最好）；
+/// 带统计与抖动的编码。
+///
+/// 抖动用 TPDF（两个均匀分布相加）：确定性种子的 LCG，
+/// 保证同样输入必得同样输出（可复现是这项工程的一贯要求）。
+pub fn encode_wav_ex(
+  audio : Audio,
+  opts : EncodeOptions,
+) -> EncodeReport raise AudioError {
+  let format = opts.format
+  // 位深由 format 决定，encode_wav_raw 内部自行取值
+  let mut peak = 0.0
+  let mut clipped = 0
+  let samples = audio.samples()
+  let jitter = Lcg_dither::new(0x5eed)
+  if opts.dither && is_integer_format(format) {
+    // 抖动幅度 = 1 LSB（TPDF 由两次均匀分布之差构成）
+    let scale = match format {
+      I16 => 32768.0
+      I24 => 8388608.0
+      I32 => 2147483648.0
+      _ => 1.0
+    }
+    let dithered : FixedArray[Float] = FixedArray::make(samples.length(), 0.0)
+    for i = 0; i < samples.length(); i = i + 1 {
+      let v = samples[i].to_double()
+      let d = (jitter.next() - jitter.next()) / scale
+      dithered[i] = Float::from_double(v + d)
+    }
+    // 统计仍按原信号算峰值/削波
+    for i = 0; i < samples.length(); i = i + 1 {
+      let a = if samples[i].to_double() < 0.0 {
+        -samples[i].to_double()
+      } else {
+        samples[i].to_double()
+      }
+      if a > peak {
+        peak = a
+      }
+      if a > 1.0 {
+        clipped = clipped + 1
+      }
+    }
+    return {
+      bytes: encode_wav_raw(audio_with_samples(audio, dithered), format),
+      clipped_samples: clipped,
+      peak,
+    }
+  }
+  for i = 0; i < samples.length(); i = i + 1 {
+    let a = if samples[i].to_double() < 0.0 {
+      -samples[i].to_double()
+    } else {
+      samples[i].to_double()
+    }
+    if a > peak {
+      peak = a
+    }
+    if a > 1.0 {
+      clipped = clipped + 1
+    }
+  }
+  { bytes: encode_wav_raw(audio, format), clipped_samples: clipped, peak }
+}
+
+fn audio_with_samples(audio : Audio, samples : FixedArray[Float]) -> Audio {
+  {
+    sample_rate: audio.sample_rate,
+    channels: audio.channels,
+    samples,
+    extra_chunks: audio.extra_chunks,
+    source_format: audio.source_format,
+  }
+}
+
+///| 确定性 LCG，供抖动使用（可复现）
+priv struct Lcg_dither {
+  mut state : Int
+}
+
+fn Lcg_dither::new(seed : Int) -> Lcg_dither {
+  { state: seed }
+}
+
+///| [0,1) 均匀分布
+fn Lcg_dither::next(self : Lcg_dither) -> Double {
+  self.state = (self.state * 25173 + 13849) % 65536
+  self.state.to_double() / 65536.0
+}
+
+///|
+/// 编码为 WAV 字节流。默认沿用来源格式（解码时记录的），手工构造的 Audio 则用 16-bit PCM；
 /// 声道数 > 2 时自动使用 WAVE_FORMAT_EXTENSIBLE。
-pub fn encode_wav(audio : Audio, format? : SampleFormat = I16) -> Bytes raise AudioError {
+pub fn encode_wav(audio : Audio, format? : SampleFormat) -> Bytes raise AudioError {
+  let f = match format {
+    Some(x) => x
+    None =>
+      match audio.source_format {
+        Some(x) => x
+        None => I16
+      }
+  }
+  encode_wav_ex(audio, { format: f, dither: false }).bytes
+}
+
+///| 真正的编码实现（无统计、无抖动）
+fn encode_wav_raw(audio : Audio, format : SampleFormat) -> Bytes raise AudioError {
   let n_channels = audio.channels()
   let rate = audio.sample_rate()
   if n_channels <= 0 || rate <= 0 {

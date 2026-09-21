@@ -17,7 +17,9 @@ pub(all) enum SampleFormat {
   I32 // 32-bit 小端有符号 PCM
   F32 // 32-bit IEEE 浮点
   F64 // 64-bit IEEE 浮点
-}
+} derive(Eq)
+
+pub extend SampleFormat with Eq::{equal, not_equal}
 
 pub impl Show for SampleFormat with fn output(self, logger) {
   match self {
@@ -60,6 +62,9 @@ pub struct Audio {
   channels : Int
   samples : FixedArray[Float]
   extra_chunks : Array[(String, Bytes)]
+  /// 解码来源的采样格式。带上它，`encode_wav` 就能默认做"保格式往返"——
+  /// 24-bit 素材重采样后不会无声降级成 16-bit。手工构造的 Audio 为 None。
+  source_format : SampleFormat?
 }
 
 ///| 构造。调用方须保证不变式（解码器会校验后才会构造）。
@@ -68,7 +73,7 @@ pub fn Audio::new(
   channels : Int,
   samples : FixedArray[Float],
 ) -> Audio {
-  { sample_rate, channels, samples, extra_chunks: [] }
+  { sample_rate, channels, samples, extra_chunks: [], source_format: None }
 }
 
 pub fn Audio::sample_rate(self : Audio) -> Int {
@@ -87,6 +92,11 @@ pub fn Audio::frames(self : Audio) -> Int {
 ///| 交错样本数组（零拷贝共享）
 pub fn Audio::samples(self : Audio) -> FixedArray[Float] {
   self.samples
+}
+
+///| 解码来源的采样格式（手工构造的 Audio 为 None）
+pub fn Audio::source_format(self : Audio) -> SampleFormat? {
+  self.source_format
 }
 
 ///| 未识别的 RIFF 块（原样保留，写出时回写）
@@ -114,6 +124,18 @@ pub fn Audio::with_extra_chunks(
     channels: self.channels,
     samples: self.samples,
     extra_chunks,
+    source_format: self.source_format,
+  }
+}
+
+///| 带上来源格式（解码器与重采样用；普通调用者一般不需要）
+pub fn Audio::with_source_format(self : Audio, format : SampleFormat) -> Audio {
+  {
+    sample_rate: self.sample_rate,
+    channels: self.channels,
+    samples: self.samples,
+    extra_chunks: self.extra_chunks,
+    source_format: Some(format),
   }
 }
 

@@ -36,7 +36,15 @@ const USAGE : String = "moonvoice/resample — 把 WAV 重采样到目标采样�
 struct Options {
   rate : Int
   quality : @mbrs.Quality
+  format : SampleFormatChoice
+  dither : Bool
   help : Bool
+}
+
+///| 输出格式选择：默认沿用输入格式（24-bit 素材不会被无声降级）
+enum SampleFormatChoice {
+  KeepInput
+  Explicit(@audio.SampleFormat)
 }
 
 fn parse_int(name : String, s : String) -> Int raise CliError {
@@ -58,6 +66,8 @@ fn parse_args(args : Array[String]) -> Options raise CliError {
   let mut opts : Options = {
     rate: 0,
     quality: @mbrs.Quality::Balanced,
+    format: KeepInput,
+    dither: false,
     help: false,
   }
   let mut i = 0
@@ -69,6 +79,27 @@ fn parse_args(args : Array[String]) -> Options raise CliError {
       i = i + 1
     } else if a == "--rate" {
       opts = { ..opts, rate: parse_int(a, next) }
+      i = i + 2
+    } else if a == "--dither" {
+      opts = { ..opts, dither: true }
+      i = i + 1
+    } else if a == "--format" {
+      opts = {
+        ..opts,
+        format: if next == "i16" {
+          Explicit(@audio.SampleFormat::I16)
+        } else if next == "i24" {
+          Explicit(@audio.SampleFormat::I24)
+        } else if next == "i32" {
+          Explicit(@audio.SampleFormat::I32)
+        } else if next == "f32" {
+          Explicit(@audio.SampleFormat::F32)
+        } else if next == "u8" {
+          Explicit(@audio.SampleFormat::U8)
+        } else {
+          raise BadUsage("未知输出格式: " + next + "（可选 i16/i24/i32/f32/u8）")
+        },
+      }
       i = i + 2
     } else if a == "--quality" {
       opts = {
@@ -108,7 +139,38 @@ fn run() -> Unit raise {
   }
   let decoded = @audio.decode_wav(input)
   let out = @mbrs.resample_audio(decoded, opts.rate, quality=opts.quality)
-  @miniio.stdout.write(@audio.encode_wav(out))
+  // 输出格式：默认沿用输入（除非显式指定）
+  let format = match opts.format {
+    KeepInput =>
+      match out.source_format() {
+        Some(f) => f
+        None => @audio.SampleFormat::I16
+      }
+    Explicit(f) => f
+  }
+  let report = @audio.encode_wav_ex(
+    out,
+    @audio.EncodeOptions::new(format, dither=opts.dither),
+  )
+  // 削波必须报出来：重采样过冲导致的削波是"无声的幅度损失"，
+  // 静默钳位会让使用者以为输出没问题。
+  if report.has_clipping() {
+    @miniio.stderr.write_text(
+      "警告: 输出有 " +
+      report.clipped_samples().to_string() +
+      " 个样本被钳位（峰值 " +
+      fmt_peak(report.peak()) +
+      "×满刻度）。建议降低增益或改用浮点输出（--format f32）。\n",
+    ) catch {
+      _ => ()
+    }
+  }
+  @miniio.stdout.write(report.bytes())
+}
+
+fn fmt_peak(x : Double) -> String {
+  let v = (x * 1000.0 + 0.5).to_int().to_double() / 1000.0
+  v.to_string()
 }
 
 fn main {

@@ -130,5 +130,20 @@ fn main raise {
     " 千次/s\n",
   )
 
+  // ---- FFT 内部分解：时间到底花在哪？ ----
+  // 不测清楚就优化 = 猜。这段专门回答"该往哪儿使劲"。
+  let fft512 = @feature.Fft::new(512)
+  let spec_buf : FixedArray[Double] = FixedArray::make(fft512.spectrum_len(), 0.0)
+  let frame_in : FixedArray[Float] = FixedArray::make(512, 0.0)
+  for i = 0; i < 512; i = i + 1 {
+    frame_in[i] = Float::from_double(@math.sin(i.to_double() * 0.1))
+  }
+  let dt_full = median_seconds(3, fn() {
+    for i = 0; i < fft_iters; i = i + 1 {
+      fft512.power_into(frame_in, spec_buf)
+    }
+  })
+  println("  · 复用分析器 power_into: " + fmt2(fft_iters.to_double() / dt_full / 1000.0) + " 千次/s")
+
   println(line + "\n")
 }

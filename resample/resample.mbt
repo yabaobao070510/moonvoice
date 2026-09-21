@@ -209,15 +209,18 @@ pub fn Resampler::process(
   let phase_k = self.taps
   let coeffs = self.coeffs
   while j < n_out {
+    // 有效抽头区间先算一次，内层循环里**不再做边界判断**。
+    // 原实现在每个抽头上都要比两次（xi >= 0 && xi < in_frames），
+    // 而边界只影响首尾各 taps 个输出样本——把判断提到循环外是纯粹的净收益。
+    let k_lo = if base - in_frames + 1 > 0 { base - in_frames + 1 } else { 0 }
+    let k_hi = if base < phase_k - 1 { base } else { phase_k - 1 }
+    let cbase = phase * phase_k
     for ch = 0; ch < channels; ch = ch + 1 {
       let mut acc = 0.0
-      for k = 0; k < phase_k; k = k + 1 {
-        let xi = base - k
-        if xi >= 0 && xi < in_frames {
-          acc = acc +
-            input[xi * channels + ch].to_double() *
-            coeffs[phase * phase_k + k].to_double()
-        }
+      for k = k_lo; k <= k_hi; k = k + 1 {
+        acc = acc +
+          input[(base - k) * channels + ch].to_double() *
+          coeffs[cbase + k].to_double()
       }
       out[j * channels + ch] = Float::from_double(acc)
     }
@@ -249,5 +252,12 @@ pub fn resample_audio(
   let channels = audio.channels()
   let in_frames = audio.frames()
   let out = r.process(audio.samples(), in_frames, channels)
-  @audio.Audio::new(to_rate, channels, out).with_extra_chunks(audio.extra_chunks())
+  let resampled = @audio.Audio::new(to_rate, channels, out).with_extra_chunks(
+    audio.extra_chunks(),
+  )
+  // 保留来源格式：否则 24-bit 素材重采样后会被无声降级成 16-bit
+  match audio.source_format() {
+    Some(f) => resampled.with_source_format(f)
+    None => resampled
+  }
 }
