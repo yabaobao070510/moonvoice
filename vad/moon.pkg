@@ -1,0 +1,6 @@
+import {
+  "moonbitlang/core/math",
+  "yabaobao/moonvoice/audio",
+  "yabaobao/moonvoice/feature",
+  "yabaobao/moonvoice/segments",
+}
