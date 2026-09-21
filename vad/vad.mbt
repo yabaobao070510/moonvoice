@@ -383,11 +383,11 @@ fn majority_smooth(flags : Array[Bool], window : Int) -> Array[Bool] {
 
 ///   只加不减的融合在"响亮的白噪声突发"面前毫无办法——那样它退化成纯能量 VAD。
 fn spectral_bonus(flatness : Double, params : VadParams) -> Double {
-  let ref = params.max_flatness
-  if ref <= 0.0 {
+  let ref_flat = params.max_flatness
+  if ref_flat <= 0.0 {
     return 0.0
   }
-  let rel = (ref - flatness) / ref
+  let rel = (ref_flat - flatness) / ref_flat
   let clamped = if rel > 1.0 {
     1.0
   } else if rel < -1.0 {
