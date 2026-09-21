@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# 音频/二进制 fixture 与产物：禁止任何换行或编码转换
+*.wav binary
+*.pcm binary
+*.flac binary
+*.wasm binary
+*.jsonl binary
