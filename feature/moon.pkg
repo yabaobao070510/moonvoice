@@ -2,7 +2,3 @@ import {
   "moonbitlang/core/math",
   "yabaobao/moonvoice/audio",
 }
-
-import {
-  "yabaobao/moonvoice/resample",
-} for "test"
