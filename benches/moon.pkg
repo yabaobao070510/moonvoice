@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/core/bench",
+  "moonbitlang/core/math",
+  "yabaobao/moonvoice/audio",
+  "yabaobao/moonvoice/feature",
+  "yabaobao/moonvoice/resample",
+  "yabaobao/moonvoice/vad",
+}
+
+pkgtype(kind: "executable")

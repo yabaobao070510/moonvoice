@@ -120,28 +120,6 @@ pub fn FrameDecision::is_speech(self : FrameDecision) -> Bool {
   self.speech
 }
 
-///| 多声道混单声道
-pub fn to_mono(audio : @audio.Audio) -> FixedArray[Float] {
-  let ch = audio.channels()
-  let frames = audio.frames()
-  let out : FixedArray[Float] = FixedArray::make(frames, 0.0)
-  if ch == 1 {
-    for i = 0; i < frames; i = i + 1 {
-      out[i] = audio.samples()[i]
-    }
-    return out
-  }
-  let scale = 1.0 / ch.to_double()
-  for i = 0; i < frames; i = i + 1 {
-    let mut acc = 0.0
-    for c = 0; c < ch; c = c + 1 {
-      acc = acc + audio.samples()[i * ch + c].to_double()
-    }
-    out[i] = Float::from_double(acc * scale)
-  }
-  out
-}
-
 ///| 帧级 RMS（dBFS，满刻度为 1.0）
 fn frame_rms_db(mono : FixedArray[Float], from : Int, to : Int) -> Double {
   let mut acc = 0.0
@@ -206,15 +184,19 @@ pub fn compute_frame_stats(
   if to_bin > max_bin {
     to_bin = max_bin
   }
+  // 逐帧热路径：FFT 分析器与两个缓冲都在循环外建一次，循环内零分配。
+  // （用自由函数版 power_spectrum 时每帧要分配 8 KB，实测把 VAD 卡在 419 倍实时。）
+  let fft = @feature.Fft::new(n_fft)
+  let frame : FixedArray[Float] = FixedArray::make(frame_len, 0.0)
+  let spec : FixedArray[Double] = FixedArray::make(fft.spectrum_len(), 0.0)
   for f = 0; f < n_frames; f = f + 1 {
     let from = f * frame_len
     let to = from + frame_len
-    let frame : FixedArray[Float] = FixedArray::make(frame_len, 0.0)
     for i = from; i < to && i < mono.length(); i = i + 1 {
       frame[i - from] = mono[i]
     }
     energies.push(frame_rms_db(mono, from, to))
-    let spec = @feature.power_spectrum(frame, n_fft)
+    fft.power_into(frame, spec)
     flatness.push(@feature.spectral_flatness(spec, from_bin, to_bin))
   }
   { frame_ms, energies_db: energies, flatness }
@@ -516,7 +498,7 @@ pub fn build_result(
   params : VadParams,
   engine : VadEngine,
 ) -> @segments.SegmentsResult {
-  let mono = to_mono(audio)
+  let mono = audio.to_mono()
   let frames = analyze_frames(mono, audio.sample_rate(), params, engine)
   let segs = frames_to_segments(frames, mono, audio.sample_rate(), params)
   @segments.SegmentsResult::of(
@@ -527,4 +509,17 @@ pub fn build_result(
     params.frame_ms,
     segs,
   )
+}
+
+///|
+/// 一步到位：音频 → 语音段数组。
+/// 只想要分段、不需要 JSON 包装时用它（`build_result` 是给技能输出用的）。
+pub fn detect_segments(
+  audio : @audio.Audio,
+  params : VadParams,
+  engine : VadEngine,
+) -> Array[@segments.Segment] {
+  let mono = audio.to_mono()
+  let frames = analyze_frames(mono, audio.sample_rate(), params, engine)
+  frames_to_segments(frames, mono, audio.sample_rate(), params)
 }

@@ -45,6 +45,16 @@ pub fn Segment::duration_ms(self : Segment) -> Int {
   self.end_ms - self.start_ms
 }
 
+///| 段内 RMS（dBFS，越接近 0 越响）
+pub fn Segment::rms_dbfs(self : Segment) -> Double {
+  self.rms_dbfs
+}
+
+///| 判决裕量归一化到 0~1，可用来过滤低置信段
+pub fn Segment::confidence(self : Segment) -> Double {
+  self.confidence
+}
+
 ///| 源音频信息
 pub struct SourceInfo {
   sample_rate : Int
@@ -122,6 +132,50 @@ pub fn SegmentsResult::of(
     segments,
     SegmentStats::new(speech_ms, speech_ratio(segments, duration_ms)),
   )
+}
+
+pub fn SegmentsResult::segments(self : SegmentsResult) -> Array[Segment] {
+  self.segments
+}
+
+pub fn SegmentsResult::source(self : SegmentsResult) -> SourceInfo {
+  self.source
+}
+
+pub fn SegmentsResult::params(self : SegmentsResult) -> AnalysisParams {
+  self.params
+}
+
+pub fn SegmentsResult::stats(self : SegmentsResult) -> SegmentStats {
+  self.stats
+}
+
+pub fn SourceInfo::sample_rate(self : SourceInfo) -> Int {
+  self.sample_rate
+}
+
+pub fn SourceInfo::channels(self : SourceInfo) -> Int {
+  self.channels
+}
+
+pub fn SourceInfo::duration_ms(self : SourceInfo) -> Int {
+  self.duration_ms
+}
+
+pub fn SegmentStats::speech_ms(self : SegmentStats) -> Int {
+  self.speech_ms
+}
+
+pub fn SegmentStats::ratio(self : SegmentStats) -> Double {
+  self.ratio
+}
+
+pub fn AnalysisParams::engine(self : AnalysisParams) -> String {
+  self.engine
+}
+
+pub fn AnalysisParams::frame_ms(self : AnalysisParams) -> Int {
+  self.frame_ms
 }
 
 pub fn SegmentsResult::to_json_string(self : SegmentsResult) -> String {

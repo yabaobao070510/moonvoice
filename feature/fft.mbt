@@ -9,6 +9,136 @@
 /// - 全部用 Double：谱能量的动态范围大（>100 dB），f32 累加会在地板附近失真，
 ///   而特征值本身对精度敏感（VAD 的判决就是几 dB 的事）。
 
+///|
+/// 可复用的 FFT 分析器。
+///
+/// 为什么需要它（先测再改，数字来自 benches）：
+/// 自由函数版 `power_spectrum` 每次调用要分配两个 n 点 Double 缓冲（n=512 时 8 KB），
+/// 旋转因子又在蝶形里用递推现算——实测 61 µs/次，直接把 VAD 卡在 419 倍实时。
+/// 这里做两件事：
+///   1. **旋转因子查表**：构造时算一次，热路径里只剩乘加（顺带消掉递推的误差累积）；
+///   2. **缓冲复用**：时域/频域缓冲归分析器所有，逐帧调用零分配。
+pub struct Fft {
+  n : Int
+  re : FixedArray[Double]
+  im : FixedArray[Double]
+  cos_tab : FixedArray[Double]
+  sin_tab : FixedArray[Double]
+}
+
+///| 构造。`n` 必须是 2 的幂。
+pub fn Fft::new(n : Int) -> Fft {
+  if n <= 0 || (n & (n - 1)) != 0 {
+    abort("Fft::new: n 必须是 2 的幂")
+  }
+  let half = n / 2
+  let cos_tab : FixedArray[Double] = FixedArray::make(half, 1.0)
+  let sin_tab : FixedArray[Double] = FixedArray::make(half, 0.0)
+  for k = 0; k < half; k = k + 1 {
+    let ang = -2.0 * @math.PI * k.to_double() / n.to_double()
+    cos_tab[k] = @math.cos(ang)
+    sin_tab[k] = @math.sin(ang)
+  }
+  {
+    n,
+    re: FixedArray::make(n, 0.0),
+    im: FixedArray::make(n, 0.0),
+    cos_tab,
+    sin_tab,
+  }
+}
+
+pub fn Fft::size(self : Fft) -> Int {
+  self.n
+}
+
+///| 频域缓冲（长度 n/2+1 的功率谱写到这里）
+pub fn Fft::spectrum_len(self : Fft) -> Int {
+  self.n / 2 + 1
+}
+
+///| 就地 FFT（用查表旋转因子），结果留在 re/im
+fn Fft::transform(self : Fft) -> Unit {
+  let n = self.n
+  let re = self.re
+  let im = self.im
+  // 位反转置换
+  let mut j = 0
+  for i = 1; i < n; i = i + 1 {
+    let mut bit = n / 2
+    while (j & bit) != 0 {
+      j = j ^ bit
+      bit = bit / 2
+    }
+    j = j | bit
+    if i < j {
+      let tr = re[i]
+      re[i] = re[j]
+      re[j] = tr
+      let ti = im[i]
+      im[i] = im[j]
+      im[j] = ti
+    }
+  }
+  // 蝶形：旋转因子按 k*(n/len) 查表
+  let mut len = 2
+  while len <= n {
+    let stride = n / len
+    let half = len / 2
+    let mut i = 0
+    while i < n {
+      let mut idx = 0
+      for k = 0; k < half; k = k + 1 {
+        let wr = self.cos_tab[idx]
+        let wi = self.sin_tab[idx]
+        let ur = re[i + k]
+        let ui = im[i + k]
+        let vr = re[i + k + half] * wr - im[i + k + half] * wi
+        let vi = re[i + k + half] * wi + im[i + k + half] * wr
+        re[i + k] = ur + vr
+        im[i + k] = ui + vi
+        re[i + k + half] = ur - vr
+        im[i + k + half] = ui - vi
+        idx = idx + stride
+      }
+      i = i + len
+    }
+    len = len * 2
+  }
+}
+
+///|
+/// 加 Hann 窗并做 FFT，功率谱写入 `out`（长度须为 n/2+1）。
+/// 全程零分配——热路径上逐帧调用它。
+pub fn Fft::power_into(self : Fft, x : FixedArray[Float], out : FixedArray[Double]) -> Unit {
+  let n = self.n
+  let re = self.re
+  let im = self.im
+  let last = (n - 1).to_double()
+  let m = x.length()
+  for i = 0; i < n; i = i + 1 {
+    if i < m {
+      let w = 0.5 * (1.0 - @math.cos(2.0 * @math.PI * i.to_double() / last))
+      re[i] = x[i].to_double() * w
+    } else {
+      re[i] = 0.0
+    }
+    im[i] = 0.0
+  }
+  self.transform()
+  let half = n / 2 + 1
+  for i = 0; i < half && i < out.length(); i = i + 1 {
+    out[i] = re[i] * re[i] + im[i] * im[i]
+  }
+}
+
+///| 便利版：自己分配输出（非热路径用；热路径请用 `power_into`）
+pub fn Fft::power(self : Fft, x : FixedArray[Float]) -> FixedArray[Double] {
+  let out : FixedArray[Double] = FixedArray::make(self.spectrum_len(), 0.0)
+  self.power_into(x, out)
+  out
+}
+
 ///| 不小于 n 的最小 2 的幂
 pub fn next_pow2(n : Int) -> Int {
   let mut p = 1

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 四个后端跑同一套测试（金标数据内嵌在源码里，不依赖文件系统，
+        # 所以 wasm 沙箱里也能跑同一套断言）
+        backend: [wasm, wasm-gc, js, native]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain version
+        run: moon version
+
+      - name: Check (warnings are errors)
+        run: moon check --deny-warn
+
+      - name: Test (${{ matrix.backend }})
+        run: moon test --target ${{ matrix.backend }}
+
+      - name: Build skills (${{ matrix.backend }})
+        if: matrix.backend == 'wasm'
+        run: |
+          moon build --target wasm cmd/vad
+          moon build --target wasm cmd/resample

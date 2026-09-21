@@ -4,3 +4,7 @@ import {
   "yabaobao/moonvoice/feature",
   "yabaobao/moonvoice/segments",
 }
+
+import {
+  "yabaobao/moonvoice/resample",
+} for "test"

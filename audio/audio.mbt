@@ -239,3 +239,27 @@ pub fn encode_i32(x : Float) -> Int {
   // 上限用 2147483647（Int 可表示），比例取 2147483648
   float_to_int(x, 2147483648.0, -2147483648, 2147483647)
 }
+
+///|
+/// 混成单声道（多声道取平均）。放在 audio 包而不是 vad 包：
+/// 这是音频数据操作，与"是否做语音检测"无关。
+pub fn Audio::to_mono(self : Audio) -> FixedArray[Float] {
+  let ch = self.channels
+  let frames = self.frames()
+  let out : FixedArray[Float] = FixedArray::make(frames, 0.0)
+  if ch == 1 {
+    for i = 0; i < frames; i = i + 1 {
+      out[i] = self.samples[i]
+    }
+    return out
+  }
+  let scale = 1.0 / ch.to_double()
+  for i = 0; i < frames; i = i + 1 {
+    let mut acc = 0.0
+    for c = 0; c < ch; c = c + 1 {
+      acc = acc + self.samples[i * ch + c].to_double()
+    }
+    out[i] = Float::from_double(acc * scale)
+  }
+  out
+}
