@@ -10,6 +10,8 @@ moonvoice 用纯 MoonBit 补上这一层：
 
 ```
 WAV 读入 → 重采样 → 语音活动检测（VAD）→ 语音段 / 特征
+         ↘ STFT → mel → log-mel / MFCC（识别器前端）
+         ↘ 双二阶滤波 → K 加权 → EBU R128 响度
 ```
 
 同一份代码在 **wasm / wasm-gc / js / native** 四个后端运行（测试也在四后端全绿），
@@ -24,7 +26,13 @@ moonx <user>/moonvoice/cmd/vad -- --resample 16000 < input.wav > segments.json
 # 2) 只做重采样（输出位深默认沿用输入格式）
 moonx <user>/moonvoice/cmd/resample -- --rate 16000 < input.wav > output.wav
 
-# 3) 本地开发（不需要发布）
+# 3) 测响度并拿到"该调多少 dB"（EBU R128）
+moonx <user>/moonvoice/cmd/loudness -- --target -16 < input.wav
+
+# 4) 只保留人声：检出 → 切片 → 拼接（去掉静音）
+moonx <user>/moonvoice/cmd/vad -- --speech-only < input.wav > speech_only.wav
+
+# 5) 本地开发（不需要发布）
 moon run --target wasm cmd/vad -- --indent 2 < input.wav
 ```
 
@@ -49,10 +57,10 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 |---|---|
 | `audio` | RIFF/WAV 编解码：PCM 8/16/24/32-bit、IEEE float 32/64-bit、EXTENSIBLE、多声道；未知块原样保留并回写 |
 | `resample` | 多相窗函数 sinc（Kaiser）重采样，任意有理数比率，三档质量 |
-| `feature` | FFT、功率谱、频带能量、谱平坦度、谱熵 |
+| `feature` | **时频与特征全链**：窗函数（6 种）/ FFT / STFT-ISTFT / 功率谱 / mel 滤波器组 / log-mel / MFCC / 双二阶滤波器 / EBU R128 响度 / 谱特征（质心·带宽·滚降·平坦度·熵·流量·过零率） |
 | `vad` | 三引擎语音活动检测（能量 / 谱 / 融合）+ 两遍噪声底跟踪 + 时间平滑 |
 | `segments` | 语音段时间轴模型与 JSON 契约 |
-| `cmd/vad`、`cmd/resample` | 两个 WASIp1 技能（stdin → stdout） |
+| `cmd/vad`、`cmd/resample`、`cmd/loudness` | 三个 WASIp1 技能（stdin → stdout） |
 
 ## 实测指标
 
@@ -100,6 +108,20 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 通带内 1 kHz 正弦对解析解的 SNR 为 **94.6 dB**。
 以上数字都被 numpy 独立复算核对过；`best` 档 20 kHz 有 0.7 dB 出入，
 那是 f32 系数存储的量化底噪（约 -128 dB），超出这个量级没有意义。
+
+### 时频与特征（对拍 librosa / scipy）
+
+| 环节 | 参照实现 | 结果 |
+|---|---|---|
+| 窗函数（6 种 × 对称/周期） | scipy.signal.windows | \|Δ\| < 1e-12 |
+| STFT 幅度谱 | numpy.fft 逐帧计算 | 与 f32 输入精度同量级 |
+| ISTFT 完全重构 | 构造性质 | 5 种窗 SNR ≥ 100 dB |
+| mel 滤波器组 | librosa.filters.mel（Slaney 标度+归一化） | 相对误差 < 1e-8 |
+| log-mel | librosa.feature.melspectrogram | 最大偏差 < 0.5 dB |
+| MFCC | librosa.feature.mfcc | 最大偏差 < 0.5 |
+| DCT-II | scipy.fftpack | \|Δ\| < 1e-12 |
+| 积分响度 | **pyloudnorm** | < 0.1 LU |
+| 双二阶 -3dB 点/增益 | 滤波器定义 | < 0.01 dB |
 
 ### VAD
 
