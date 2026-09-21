@@ -56,6 +56,39 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 
 ## 实测指标
 
+### 吞吐量
+
+`moon run --target <后端> --release benches`（`benches/` 包，可复跑）
+
+| 操作 | wasm | native |
+|---|---|---|
+| WAV 解码 | 210 MB/s | 234 MB/s |
+| 重采样 48k→16k | 244× 实时 | 509× 实时 |
+| **VAD（fused，16 kHz 单声道）** | **1171× 实时** | **1916× 实时** |
+| FFT 512 点（复用分析器） | 100k 次/s | 226k 次/s |
+
+1171 倍实时 = 1 小时音频约 3 秒分析完（wasm 沙箱内）。
+
+优化的三步都是**先测后改**，每步有数字（见 `benches/` 与各包注释）：
+
+1. **去掉冗余边界检查**：重采样内层每抽头比两次边界，而边界只影响首尾 → +22~26%
+2. **内部缓冲改用无检查访问**：FFT 蝶形每点读写 8 次 → +24~43%
+3. **缓存 Hann 窗**：此前每帧重算 512 次 `cos()`，而窗只依赖帧长 → wasm **+322%**
+
+顺带记一条**反例**：同样"消除分配"的思路最先用在 FFT 上，实测**毫无效果**——
+分配根本不是瓶颈。这次的收益来自测量，不是来自直觉。
+
+### 音频产出质量
+
+| 特性 | 说明 |
+|---|---|
+| **位深保真** | `Audio` 记录解码来源格式，重编码默认沿用——24-bit 素材重采样后不会静默降级成 16-bit |
+| **可选 TPDF 抖动** | 降位深时把量化失真变成噪声（均值无偏、确定性可复现） |
+| **削波报告** | `EncodeReport` 给出钳位样本数与峰值；CLI 据此告警并给处置建议 |
+
+实测：0.98 幅度方波经重采样后 Gibbs 过冲到 1.136× 满刻度 → 报出 1398 个样本被钳位。
+简单重采样器在这里会**静默钳位**，使用者永远不知道峰值丢了。
+
 ### 重采样（48 kHz → 16 kHz）
 
 | 质量档 | 滤波器长度 | 对 9 kHz 折回的抑制 | 对 20 kHz 的抑制 |
@@ -76,6 +109,44 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 | SNR 5 dB | 召回 100%、精确率 ≥ 80% |
 | 白噪声突发 | 融合 79.7% > 纯能量 74.4% > 纯谱 40.6% |
 | 持续语音 | 合并为单段，覆盖率 ≥ 85% |
+
+## 原语与组合
+
+`audio` 只放**与语音无关**的通用原语，语音相关的组合由原语拼出来——
+所以原语能脱离本场景复用（音频编辑、数据集制作、播放器……）。
+
+```moonbit
+// 原语（audio 包）
+let head = audio.slice_ms(0, 2000)            // 切片（自动夹范围）
+let loud = head.apply_gain_db(6.0)            // 增益
+let norm = loud.normalize_peak(target=0.98)   // 峰值归一化
+let both = @audio.Audio::concat([head, head]) // 拼接（参数不一致会报错，不偷偷转换）
+let mixed = @audio.Audio::mix(a, b, ratio=0.4)// 混音
+
+// 组合（vad 包）：检出 → 切片 → 拼接
+let segs  = @vad.detect_segments(audio, @vad.VadParams::default(), @vad.VadEngine::Fused)
+let parts = @vad.extract_segments(audio, segs)   // 每段单独取出
+let clean = @vad.speech_only(audio, segs)        // 去掉静音的干净人声
+```
+
+一条命令拿到同样结果：
+
+```bash
+moonx <user>/moonvoice/cmd/vad -- --speech-only < in.wav > speech_only.wav
+```
+
+实测：4.00 s 输入 → 2.52 s 输出（与检出段 420–1680 + 2130–3390 ms 完全吻合），采样率保持不变。
+
+## 生态复用决策
+
+按"已有基础库就不重复造"的原则，动工前查过 mooncakes 现状（2026-09-21 实测下载量）：
+
+| 领域 | 生态现状 | 决策 |
+|---|---|---|
+| SIMD 原语 | `mizchi/simd` 10,339 次下载、MIT、跨四后端 | **可用**；当前 FFT 已达 100k 次/s（wasm），暂未引入；若继续榨性能（SIMD 蝶形，预计再 2×）则引入 |
+| FFT | 专用包最多 33 次下载（MoonSpectrum），其余 8–16 | **自建**：依赖不成熟的包比自带一个已用 numpy 金标验证过的 300 行实现风险更高 |
+| WAV 编解码 | 有两个包，均 <20 次下载 | **自建**：已用 libsndfile 金标对拍，支持格式更多 |
+| 重采样 / VAD | **零命中** | 自建（这就是本项目的立项理由） |
 
 ## 验证做法（这是本项目的重点）
 
