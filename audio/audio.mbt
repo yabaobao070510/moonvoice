@@ -19,7 +19,7 @@ pub(all) enum SampleFormat {
   F64 // 64-bit IEEE 浮点
 }
 
-impl Show for SampleFormat with fn output(self, logger) {
+pub impl Show for SampleFormat with fn output(self, logger) {
   match self {
     U8 => logger <+ "u8"
     I16 => logger <+ "i16"
@@ -30,6 +30,8 @@ impl Show for SampleFormat with fn output(self, logger) {
   }
 }
 
+pub extend SampleFormat with Show::{to_string, output}
+
 ///| 解析/编码错误。MoonBit 的 checked error：调用方必须显式处理，不会静默漏抛。
 pub(all) suberror AudioError {
   NotRiff
@@ -38,7 +40,7 @@ pub(all) suberror AudioError {
   UnsupportedFormat(String)
 }
 
-impl Show for AudioError with fn output(self, logger) {
+pub impl Show for AudioError with fn output(self, logger) {
   match self {
     NotRiff => logger.write_string("not a RIFF/WAVE stream")
     Truncated(what) => logger.write_string("truncated: " + what)
@@ -46,6 +48,8 @@ impl Show for AudioError with fn output(self, logger) {
     UnsupportedFormat(what) => logger.write_string("unsupported format: " + what)
   }
 }
+
+pub extend AudioError with Show::{to_string, output}
 
 ///|
 /// 音频数据：交错存储、归一化到 [-1, 1] 的 f32 样本。

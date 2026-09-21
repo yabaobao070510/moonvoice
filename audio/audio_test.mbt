@@ -322,3 +322,8 @@ test "错误：缺 fmt 块" {
   }
   assert_true(raised)
 }
+
+test "SampleFormat 有可读的字符串表示（用于日志与错误信息）" {
+  assert_eq("\{@audio.SampleFormat::I16}", "i16")
+  assert_eq("\{@audio.SampleFormat::F64}", "f64")
+}

@@ -1,0 +1,67 @@
+{
+  "cases": [
+    {
+      "name": "sine_u8_mono",
+      "codec": "pcm_u8",
+      "channels": 1,
+      "sample_rate": 8000,
+      "frames": 200,
+      "bytes": 278,
+      "expected_source": "libsndfile (soundfile) 独立解码"
+    },
+    {
+      "name": "sine_s16_mono",
+      "codec": "pcm_s16le",
+      "channels": 1,
+      "sample_rate": 16000,
+      "frames": 400,
+      "bytes": 878,
+      "expected_source": "libsndfile (soundfile) 独立解码"
+    },
+    {
+      "name": "sine_s24_mono",
+      "codec": "pcm_s24le",
+      "channels": 1,
+      "sample_rate": 16000,
+      "frames": 400,
+      "bytes": 1302,
+      "expected_source": "libsndfile (soundfile) 独立解码"
+    },
+    {
+      "name": "sine_s32_mono",
+      "codec": "pcm_s32le",
+      "channels": 1,
+      "sample_rate": 16000,
+      "frames": 400,
+      "bytes": 1702,
+      "expected_source": "libsndfile (soundfile) 独立解码"
+    },
+    {
+      "name": "sine_f32_mono",
+      "codec": "pcm_f32le",
+      "channels": 1,
+      "sample_rate": 16000,
+      "frames": 400,
+      "bytes": 1692,
+      "expected_source": "libsndfile (soundfile) 独立解码"
+    },
+    {
+      "name": "sine_f64_mono",
+      "codec": "pcm_f64le",
+      "channels": 1,
+      "sample_rate": 16000,
+      "frames": 400,
+      "bytes": 3292,
+      "expected_source": "libsndfile (soundfile) 独立解码"
+    },
+    {
+      "name": "sine_s16_stereo",
+      "codec": "pcm_s16le",
+      "channels": 2,
+      "sample_rate": 16000,
+      "frames": 400,
+      "bytes": 1678,
+      "expected_source": "libsndfile (soundfile) 独立解码"
+    }
+  ]
+}
