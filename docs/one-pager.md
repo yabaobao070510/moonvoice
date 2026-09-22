@@ -23,6 +23,9 @@ WAV 解码 → 重采样 → 语音活动检测（VAD）→ 语音段
 以 agent 技能形式发布到 skills.mooncakes.io。同一份代码在 **wasm / wasm-gc / js / native**
 四个后端运行，**不访问文件系统、不联网、不加载模型权重**——音频数据不离开调用方。
 
+**范围边界（明确不做）**：不做语音增强 / 人声析出——VAD 只回答"哪里是语音"，不改变信号；
+噪声大到盖过人声、无有效噪声底可跟踪时，该判定会退化。复杂环境的增强列入 v0.2 路线图。
+
 **工程重点在"可验证"**（而不是"能跑"）：
 
 | 环节 | 独立参照实现 | 实测 |
@@ -58,6 +61,10 @@ inside a WebAssembly sandbox. In the MoonBit ecosystem, audio has decoders but *
 speech segments; STFT → mel → log-mel/MFCC; K-weighting → EBU R128 loudness with gain advice.
 Shipped as agent skills, running identically on wasm / wasm-gc / js / native, with no filesystem,
 no network, and no model weights.
+
+**Scope limit**: no speech enhancement / separation — VAD answers *where speech is* and does not
+modify the signal; when noise is louder than the speech (no usable noise floor), the decision
+degrades. Enhancement for noisy environments is on the v0.2 roadmap.
 
 **Verification first**: every stage is checked against an independent reference —
 libsndfile (WAV), scipy (resampling), numpy (STFT), librosa (mel/MFCC), pyloudnorm (EBU R128) —

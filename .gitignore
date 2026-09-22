@@ -4,6 +4,8 @@ target/
 target
 .mooncakes/
 .moonagent/
-# 演示素材：before.wav 15 MB，可由 demo/build_before.py 从 LibriSpeech 再生（见 README）
-demo/before.wav
+# 演示素材：WAV 是构建中间物（MP3 才进仓库），可由 demo/build_materials.py 从原始录音再生（见 README）
+demo/*_before.wav
 demo/_shot*.png
+# 任务临时垃圾（等用户统一清理，不进仓库）
+_trash/

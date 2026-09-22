@@ -2,86 +2,192 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>moonvoice — 在浏览器里运行三个技能</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>moonvoice — 真实录音 → 可识别的语音段（浏览器内运行）</title>
 <style>
-  :root { --bg:#101216; --panel:#181c22; --line:#282e38; --fg:#e8ebf0; --dim:#8d97a8;
-          --accent:#2dd4bf; }
+  :root {
+    --paper:#FAFAF8; --ink:#191A1C; --muted:#6B6F76; --line:#E3E2DE;
+    --accent:#A85A1E; --accent-soft:#F1E3D3;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg);
-         font:15px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
-  main { max-width:940px; margin:0 auto; padding:32px 20px 64px; }
-  h1 { font-size:19px; font-weight:600; margin:0 0 6px; }
-  .lead { color:var(--dim); margin:0 0 22px; }
-  .lead strong { color:var(--fg); font-weight:600; }
-  section { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-            padding:16px; margin-bottom:14px; }
-  canvas { display:block; width:100%; height:132px; border-radius:6px;
-           background:#0b0e13; cursor:crosshair; }
-  .meta { color:var(--dim); font-size:13px; margin:10px 0 0; }
-  .meta b { color:var(--fg); font-weight:600; }
-  button { font:inherit; font-weight:600; padding:10px 20px; border-radius:8px; border:0;
-           background:var(--accent); color:#062b28; cursor:pointer; }
-  button:disabled { background:#2a3038; color:#6b7482; cursor:default; }
-  .row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  audio { width:100%; margin-top:8px; }
-  table { border-collapse:collapse; width:100%; font-size:14px; }
-  th,td { padding:9px 10px 9px 0; border-bottom:1px solid var(--line); text-align:left;
-          vertical-align:top; }
-  tr:last-child td { border-bottom:0; }
-  th { color:var(--dim); font-weight:500; font-size:13px; }
-  td.skill { font-family:ui-monospace,Consolas,monospace; white-space:nowrap; }
-  td.num { font-family:ui-monospace,Consolas,monospace; text-align:right; color:var(--dim);
-           white-space:nowrap; }
-  .big { color:var(--accent); font-weight:600; }
-  .hide { display:none; }
-  code { background:#0b0e13; padding:1px 5px; border-radius:4px; font-size:13px; }
-  .hint { color:var(--dim); font-size:13px; margin:14px 0 0; }
+  html, body { margin:0; padding:0; }
+  body {
+    background:var(--paper); color:var(--ink);
+    font:15.5px/1.7 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num { font-variant-numeric:tabular-nums; }
+  .wrap { max-width:760px; margin:0 auto; padding:28px 20px 56px; }
+
+  /* ── 页头 ── */
+  header { display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  h1 { font-size:20px; font-weight:650; margin:0; letter-spacing:.01em; }
+  .lead { margin:8px 0 0; color:var(--muted); }
+  .lead b { color:var(--ink); font-weight:600; }
+
+  /* ── 场景切换 ── */
+  nav { display:flex; flex-wrap:wrap; column-gap:20px; row-gap:2px; margin:22px 0 6px; border-bottom:1px solid var(--line); }
+  nav button {
+    appearance:none; background:none; border:0; padding:6px 2px 10px; margin-bottom:-1px;
+    font:inherit; font-weight:550; color:var(--muted); cursor:pointer;
+    border-bottom:2px solid transparent;
+  }
+  nav button:hover { color:var(--ink); }
+  nav button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--accent); }
+  #srcNote { color:var(--muted); font-size:13.5px; margin:10px 0 0; }
+
+  /* ── 处理块 ── */
+  .block { margin-top:26px; }
+  .blockhead { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+  .blocklabel { font-weight:600; }
+  .spec { color:var(--muted); font-size:13.5px; }
+  canvas { display:block; width:100%; height:112px; border:1px solid var(--line); border-radius:6px; }
+  audio { width:100%; margin-top:10px; height:40px; }
+  .metrics { margin:8px 0 0; color:var(--muted); font-size:13.5px; }
+  .metrics b { color:var(--ink); font-weight:600; }
+  .metrics .bad { color:var(--accent); font-weight:600; }
+  .scaleNote { color:var(--muted); font-size:13px; margin:8px 0 0; }
+
+  /* ── 运行区 ── */
+  .runrow { margin-top:26px; display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap; }
+  #runBtn {
+    font:inherit; font-weight:600; padding:11px 22px; border:0; border-radius:6px;
+    background:var(--accent); color:#fff; cursor:pointer;
+  }
+  #runBtn:hover { background:#914A14; }
+  #runBtn:disabled { background:#CFCAC2; color:#817B72; cursor:default; }
+  #runBtn:focus-visible, nav button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  #steps { list-style:none; margin:2px 0 0; padding:0; display:grid; gap:5px; font-size:13.5px; color:var(--muted); min-width:280px; }
+  #steps li { display:flex; gap:9px; align-items:baseline; }
+  #steps .dot { width:8px; height:8px; border-radius:50%; background:var(--line); flex:none; transform:translateY(-1px); }
+  #steps li.run .dot { background:var(--accent); }
+  #steps li.done .dot { background:var(--ink); }
+  #steps li.done .sd { color:var(--ink); }
+  #steps li.fail .dot { background:#B3261E; }
+  #steps .sl { flex:none; font-weight:550; color:var(--ink); }
+  #status { color:#B3261E; font-size:13.5px; margin:10px 0 0; min-height:1.2em; }
+
+  /* ── 每个技能的数据 ── */
+  details { margin-top:30px; border-top:1px solid var(--line); padding-top:14px; }
+  summary { cursor:pointer; font-weight:600; }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; margin-top:12px; }
+  th, td { padding:7px 10px 7px 0; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  th.n, td.n { text-align:right; white-space:nowrap; }
+  .segbox { max-height:220px; overflow:auto; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
+  .segbox table { margin:0; }
+  .segbox td, .segbox th { padding:5px 10px; }
+
+  /* ── 上传 ── */
+  #upPanel { margin-top:22px; }
+  #upPanel p { color:var(--muted); font-size:13.5px; margin:8px 0 0; }
+  #fileIn { font:inherit; font-size:14px; }
+  .upempty { color:var(--muted); }
+
+  /* ── 页脚 ── */
+  footer { margin-top:44px; border-top:1px solid var(--line); padding-top:14px; color:var(--muted); font-size:13px; }
+  footer p { margin:4px 0; }
+
+  @media (max-width:640px) {
+    .wrap { padding:20px 14px 44px; }
+    nav { column-gap:15px; }
+    canvas { height:88px; }
+    .runrow { gap:12px; }
+    #steps { min-width:0; }
+    #steps li { display:block; position:relative; padding-left:17px; }
+    #steps .dot { position:absolute; left:0; top:.62em; }
+    #steps .sl { margin-right:6px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    #steps li .dot { transition:background .18s ease; }
+    canvas { transition:opacity .25s ease; }
+  }
 </style>
 </head>
 <body>
-<main>
+<div class="wrap">
 
-  <h1>在浏览器里运行 moonvoice 的三个技能</h1>
+  <header>
+    <h1>moonvoice</h1>
+    <!-- 仓库公开后，在此放回仓库链接：<a href="<仓库地址>">GitHub ↗</a> -->
+  </header>
   <p class="lead">
-    下面每一步都<strong>跑在你浏览器里的 WebAssembly 上</strong>——就是把本仓库的三个 MoonBit
-    技能编译成 wasm 后加载执行（共 286 KB），不是预先算好的结果。
-    拖动波形选一段，点一次，看三个技能各自做了什么、各花多久。
+    把录音切成<b>可识别的语音段</b>——纯 MoonBit，零依赖，<b>不做语音增强</b>。
+    下面每一步都跑在你浏览器里的 <b>WebAssembly</b> 上（三个技能共 286 KB），不是预先算好的结果。
   </p>
 
-  <section>
-    <canvas id="wave"></canvas>
-    <p class="meta" id="selInfo">拖动波形选择要处理的片段</p>
+  <nav id="tabs">
+    <button data-scn="office" aria-selected="true">办公室</button>
+    <button data-scn="upload" aria-selected="false">上传录音</button>
+  </nav>
+  <p id="srcNote"></p>
+
+  <section id="upPanel" hidden>
+    <label for="fileIn">选择一段你自己的录音（wav / mp3 / m4a 均可）：</label>
+    <input type="file" id="fileIn" accept="audio/*">
+    <p>在浏览器内本地处理，文件不会上传到任何服务器；长录音自动截取前 120 秒。</p>
   </section>
 
-  <section class="row">
-    <button id="run" disabled>运行三个技能</button>
-    <span class="meta" id="status"></span>
+  <section class="block">
+    <div class="blockhead">
+      <span class="blocklabel">原始录音</span>
+      <span class="spec num" id="specBefore"></span>
+    </div>
+    <canvas id="waveBefore" role="img" aria-label="原始录音波形"></canvas>
+    <audio id="audioBefore" controls preload="none"></audio>
+    <p class="metrics" id="metBefore"></p>
+    <p class="scaleNote">两个波形使用<b>同一幅度刻度</b>绘制——原录音电平过轻时波形会明显变薄，这就是要解决的问题；灰影标出 VAD 判定的非语音段（组合链会将其移除）。</p>
   </section>
 
-  <section id="result" class="hide">
+  <section class="runrow">
+    <button id="runBtn" disabled>运行处理管线</button>
+    <ol id="steps"></ol>
+  </section>
+  <p id="status"></p>
+
+  <section class="block">
+    <div class="blockhead">
+      <span class="blocklabel">处理结果</span>
+      <span class="spec num" id="specAfter"></span>
+    </div>
+    <canvas id="waveAfter" role="img" aria-label="处理后波形"></canvas>
+    <audio id="audioAfter" controls preload="none"></audio>
+    <p class="metrics" id="metAfter"></p>
+  </section>
+
+  <details id="details">
+    <summary>每个技能的实测数据</summary>
     <table>
-      <thead><tr><th>技能</th><th>结果</th><th style="text-align:right">耗时</th></tr></thead>
-      <tbody id="rows"></tbody>
+      <thead><tr><th>技能</th><th>结果</th><th class="n">耗时</th></tr></thead>
+      <tbody id="skillRows"></tbody>
     </table>
-    <p class="hint" id="luNote"></p>
-  </section>
+    <div class="segbox" id="segBox" hidden>
+      <table>
+        <thead><tr><th>#</th><th class="n">起 (s)</th><th class="n">止 (s)</th><th class="n">时长 (s)</th><th class="n">RMS (dBFS)</th></tr></thead>
+        <tbody id="segRows"></tbody>
+      </table>
+    </div>
+  </details>
 
-  <section id="players" class="hide">
-    <p class="meta" style="margin-top:0">处理前（原样）</p>
-    <audio id="audioBefore" controls></audio>
-    <p class="meta">处理后（<span id="afterDesc"></span>）</p>
-    <audio id="audioAfter" controls></audio>
-  </section>
+  <footer>
+    <p>演示素材：AMI Meeting Corpus ES2002a（CC BY 4.0），已按演示格式重采样为 48 kHz 立体声。</p>
+    <p>页面为单文件、离线可用；无任何网络请求。复杂噪声场景的语音增强不在本版范围（见仓库 README「已知边界」）。</p>
+  </footer>
 
-</main>
+</div>
 
 <script>
 // ── 内嵌资源（由 demo/build_page.py 注入） ────────────────────────────────
-const BEFORE_MP3_B64 = "__BEFORE_MP3__";
-const WASM_B64 = { vad: "__WASM_VAD__", resample: "__WASM_RESAMPLE__", loudness: "__WASM_LOUDNESS__" };
+// v0.1 定位：页面只展示"分段 / 格式 / 电平"这条主线（不做语音增强；复杂噪声场景见 README 已知边界）。
+// 场景机制保留——v0.2 恢复复杂场景（并附降噪对照）时在这里加回来即可。
+const SCENARIOS = {
+  office:  { label:"办公室", mp3:"__OFFICE_MP3__",
+             note:"AMI ES2002a · 真实会议室多人对话（CC BY 4.0）" },
+};
+const WASM_B64 = { vad:"__WASM_VAD__", resample:"__WASM_RESAMPLE__", loudness:"__WASM_LOUDNESS__" };
 const WASI_SHIM_SRC = __SHIM__;
 
-// ── WAV 读写（只处理 16-bit PCM —— 本页素材就是这个格式） ──────────────
+// ── WAV 读写（本页所有音频都是 16-bit PCM） ──────────────────────────────
 function parseWav(buf) {
   const dv = new DataView(buf);
   const tag = (o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o+1), dv.getUint8(o+2), dv.getUint8(o+3));
@@ -92,13 +198,13 @@ function parseWav(buf) {
     if (id === "fmt ") {
       fmt = { format: dv.getUint16(body, true), channels: dv.getUint16(body + 2, true),
               rate: dv.getUint32(body + 4, true), bits: dv.getUint16(body + 14, true) };
-    } else if (id === "data") { data = { offset: body, size }; }
+    } else if (id === "data") { data = { offset: body, size: size }; }
     p = body + size + (size % 2);
   }
   if (!fmt || !data) throw new Error("WAV 缺 fmt 或 data 块");
   if (fmt.bits !== 16 || fmt.format !== 1) throw new Error("只支持 16-bit PCM");
-  return { ...fmt, dataOffset: data.offset, dataSize: data.size,
-           frames: data.size / (fmt.channels * 2) };
+  return { format:fmt.format, channels:fmt.channels, rate:fmt.rate, bits:fmt.bits,
+           dataOffset:data.offset, dataSize:data.size, frames: data.size / (fmt.channels * 2), buf:buf };
 }
 function sliceWav(w, startFrame, endFrame) {
   const bpf = w.channels * 2;
@@ -114,11 +220,6 @@ function sliceWav(w, startFrame, endFrame) {
   put(36, "data"); dv.setUint32(40, bytes, true);
   new Uint8Array(out, 44).set(new Uint8Array(w.buf, w.dataOffset + startFrame * bpf, bytes));
   return out;
-}
-function b64ToBuf(b64) {
-  const bin = atob(b64), u = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-  return u.buffer;
 }
 function audioBufferToWav(ab) {
   const ch = ab.numberOfChannels, rate = ab.sampleRate, frames = ab.length, bpf = ch * 2;
@@ -139,11 +240,23 @@ function audioBufferToWav(ab) {
     }
   return out;
 }
-const blobUrl = (buf) => URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+function b64ToBuf(b64) {
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
+}
+const dec = (u8) => new TextDecoder().decode(u8);
+const durOf = (w) => w.frames / w.rate;
+const specOf = (w) => `${(w.rate/1000).toFixed(1)} kHz · ${w.channels===1?"单声道":(w.channels===2?"立体声":w.channels+" 声道")} · ${durOf(w).toFixed(1)} 秒`;
+function clipCount(w) {
+  const s = new Int16Array(w.buf, w.dataOffset, Math.floor(w.dataSize / 2));
+  let n = 0; for (let i = 0; i < s.length; i++) if (s[i] >= 32767 || s[i] <= -32768) n++;
+  return n;
+}
 
-// ── wasm 运行：每个技能一个独立实例（互不干扰），模块编译结果缓存 ────────
+// ── wasm 运行（与旧版同一机制：每个技能独立实例，模块编译结果缓存） ──────
 const makeWASI = new Function(WASI_SHIM_SRC + "\nreturn makeWASI;")();
-const modules = {};            // 编译缓存：首次点击含编译，之后是纯处理
+const modules = {};
 async function getModule(key) {
   if (!modules[key]) modules[key] = await WebAssembly.compile(b64ToBuf(WASM_B64[key]));
   return modules[key];
@@ -156,172 +269,297 @@ async function runSkill(key, argv, inputBuf) {
   const t0 = performance.now();
   try { instance.exports._start(); } catch (e) { if (!e.exitCode) throw e; }
   const ms = performance.now() - t0;
-  wasi.bind(instance.exports.memory);     // 执行中内存可能增长，重新绑定
-  return { out: wasi.stdout(), err: wasi.stderr(), ms };
+  wasi.bind(instance.exports.memory);   // 执行中内存可能增长，重新绑定
+  return { out: wasi.stdout(), err: wasi.stderr(), ms: ms };
 }
 
-// 预热：浏览器的 wasm 引擎是分层编译的，模块**首次执行**会跑在慢档上
-// （实测首次 ~2.1 s、热了之后 ~0.3 s）。不预热的话，"耗时"报的是启动开销而不是处理开销，
-// 那会误导人。所以在页面加载后、用户还在拖选区的时候，就用一小段静音把三个模块各跑一遍。
+// 预热：wasm 引擎分层编译，模块首次执行会跑在慢档（实测慢约 8 倍）。
+// 不预热的话"耗时"报的是启动开销；预热让计时反映稳态处理开销。
 async function warmup() {
-  // 必须用**真实的 argv 与真实长度的输入**：参数写错会让技能立刻报错退出，
-  // 热路径根本没跑到，预热等于没做（这是实测踩过的坑）。
-  const slice = sliceWav(before, 0, Math.min(before.frames, before.rate * 3));   // 前 3 秒
-  const jobs = [
-    ["vad", ["vad", "--resample", "16000"]],
-    ["resample", ["resample", "--rate", "16000"]],
-    ["loudness", ["loudness", "--target", "-16", "--json"]],
-  ];
-  for (const [k, argv] of jobs) {
+  const src = decoded.office;
+  const slice = sliceWav(src.wav, 0, Math.min(src.wav.frames, src.wav.rate * 3));
+  for (const [k, argv] of [["vad", ["vad","--resample","16000"]],
+                           ["resample", ["resample","--rate","16000"]],
+                           ["loudness", ["loudness","--target","-24","--json"]],
+                           ["vad", ["vad","--speech-only","--resample","16000","--mono","--normalize","-24"]]]) {
     try { await runSkill(k, argv, slice); } catch (e) { /* 预热失败不影响主流程 */ }
   }
 }
 
-// ── 素材：MP3 内嵌（体积 1/20；真实素材本来就是压缩格式）→ 解码成 48k 立体声 WAV
-let before = null;
-(async () => {
+// ── 状态 ────────────────────────────────────────────────────────────────
+const decoded = {};     // key -> { wav, buf, note }
+const results = {};     // key -> 渲染所需的结果数据（缓存，切回不重跑）
+let current = "office";
+let running = false;
+let warmDone = false;
+window.__mv = { ready:false, warm:false, current:current, ran:{} };   // 供无头验证读取
+
+const $ = (id) => document.getElementById(id);
+const statusEl = () => $("status");
+const setStatus = (t) => { statusEl().textContent = t || ""; };
+
+// ── 解码内嵌素材（真实 MP3 → 48 kHz 立体声 WAV 字节，喂给 wasm） ─────────
+async function decodeScenario(key) {
   const ctx = new OfflineAudioContext(2, 48000, 48000);
-  const decoded = await ctx.decodeAudioData(b64ToBuf(BEFORE_MP3_B64).slice(0));
-  const buf = audioBufferToWav(decoded);
-  before = { ...parseWav(buf), buf };
-  drawWave();
-  warmup();     // 后台预热，不阻塞界面
-})();
+  const decodedAb = await ctx.decodeAudioData(b64ToBuf(SCENARIOS[key].mp3).slice(0));
+  const buf = audioBufferToWav(decodedAb);
+  decoded[key] = { buf: buf, wav: parseWav(buf), note: SCENARIOS[key].note };
+}
 
-// ── 波形 + 拖拽选区 ─────────────────────────────────────────────────────
-const cv = document.getElementById("wave");
-let sel = null, drag = null, segments = null;
-
-function drawWave() {
-  if (!before) return;
+// ── 波形绘制（两个画布同一幅度刻度） ────────────────────────────────────
+function draw(cv, wav, segs) {
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   cv.width = w * dpr; cv.height = h * dpr;
   const g = cv.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  g.fillStyle = "#fff"; g.fillRect(0, 0, w, h);   // 白底（也保证暗色模式下画布可读）
 
-  if (sel) { g.fillStyle = "rgba(45,212,191,0.12)"; g.fillRect(sel.a * w, 0, (sel.b - sel.a) * w, h); }
+  g.strokeStyle = "#E3E2DE"; g.beginPath(); g.moveTo(0, h/2 + .5); g.lineTo(w, h/2 + .5); g.stroke();
+  // ±半幅参考线（两个画布同一幅度刻度的锚点）
+  g.strokeStyle = "rgba(25,26,28,.06)"; g.beginPath();
+  g.moveTo(0, h*0.25 + .5); g.lineTo(w, h*0.25 + .5);
+  g.moveTo(0, h*0.75 + .5); g.lineTo(w, h*0.75 + .5);
+  g.stroke();
 
-  // 检出语音段：画在选区之上，直接回答"VAD 认为哪几段是语音"
-  // 段的时间是**相对所选片段**的毫秒，按比例映射到选区的像素范围即可
-  if (segments && sel) {
-    const selMs = (sel.fb - sel.fa) / before.rate * 1000;
-    const x0 = sel.a * w, spanW = (sel.b - sel.a) * w;
-    g.fillStyle = "rgba(45,212,191,0.22)";
-    for (const s of segments) {
-      const a = x0 + s.start_ms / selMs * spanW;
-      const b = x0 + s.end_ms / selMs * spanW;
-      g.fillRect(a, 0, Math.max(1, b - a), h);
+  if (segs && segs.length) {
+    // 灰影 = VAD 判定的非语音段（组合链会移除的部分）；边界加琥珀刻度。
+    // 素材本身没有长停顿时就什么都不画——这些录音的"问题"本来就不是静音。
+    const total = durOf(wav) * 1000;
+    const gaps = [];
+    let prev = 0;
+    for (const s of segs) { if (s.start_ms - prev > 20) gaps.push([prev, s.start_ms]); prev = Math.max(prev, s.end_ms); }
+    if (total - prev > 20) gaps.push([prev, total]);
+    for (const [a, b] of gaps) {
+      const x0 = a/total*w, x1 = b/total*w;
+      g.fillStyle = "rgba(107,111,118,.14)";
+      g.fillRect(x0, 0, Math.max(1, x1 - x0), h);
+      g.fillStyle = "rgba(168,90,30,.85)";
+      g.fillRect(x0, 0, 1, 7); g.fillRect(Math.max(1, x1) - 1, 0, 1, 7);
     }
   }
 
-  const s16 = new Int16Array(before.buf, before.dataOffset, before.dataSize / 2);
-  const ch = before.channels;
-  g.strokeStyle = "#5b6676"; g.lineWidth = 1; g.beginPath();
+  if (!wav) return;
+  const s16 = new Int16Array(wav.buf, wav.dataOffset, Math.floor(wav.dataSize / 2));
+  const ch = wav.channels;
+  g.strokeStyle = "#191A1C"; g.lineWidth = 1; g.beginPath();
   for (let x = 0; x < w; x++) {
-    const f0 = Math.floor(x / w * before.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / w * before.frames));
+    const f0 = Math.floor(x / w * wav.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / w * wav.frames));
     let mn = 0, mx = 0;
-    for (let f = f0; f < f1; f++) { const v = s16[f * ch]; if (v < mn) mn = v; if (v > mx) mx = v; }
-    g.moveTo(x + 0.5, h / 2 - mx / 32768 * h / 2 * 0.95);
-    g.lineTo(x + 0.5, h / 2 - mn / 32768 * h / 2 * 0.95);
+    for (let f = f0; f < f1; f++)
+      for (let c = 0; c < ch; c++) { const v = s16[f * ch + c]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    g.moveTo(x + .5, h/2 - mx/32768*(h/2 - 2));
+    g.lineTo(x + .5, h/2 - mn/32768*(h/2 - 2));
   }
   g.stroke();
 }
 
-const posToFrame = (ev) => {
-  if (!before) return 0;
-  const r = cv.getBoundingClientRect();
-  return Math.max(0, Math.min(before.frames, Math.round((ev.clientX - r.left) / r.width * before.frames)));
-};
-const fmtT = (s) => `${Math.floor(s / 60)}:${String((s % 60).toFixed(1)).padStart(4, "0")}`;
-
-cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); drag = posToFrame(e); sel = null; segments = null; drawWave(); updateSel(); });
-cv.addEventListener("pointermove", (e) => {
-  if (drag === null) return;
-  const f = posToFrame(e);
-  sel = { a: Math.min(drag, f) / before.frames, b: Math.max(drag, f) / before.frames,
-          fa: Math.min(drag, f), fb: Math.max(drag, f) };
-  drawWave(); updateSel();
-});
-cv.addEventListener("pointerup", () => { drag = null; });
-
-function updateSel() {
-  const info = document.getElementById("selInfo"), run = document.getElementById("run");
-  if (!before) { info.textContent = "正在解码素材…"; run.disabled = true; return; }
-  if (!sel || sel.fb - sel.fa < before.rate * 0.2) {
-    info.textContent = "拖动波形选择要处理的片段（至少 0.2 秒）";
-    run.disabled = true; sel = null; return;
-  }
-  info.innerHTML = `已选 <b>${fmtT(sel.fa / before.rate)} – ${fmtT(sel.fb / before.rate)}</b>` +
-                   `（<b>${((sel.fb - sel.fa) / before.rate).toFixed(1)} 秒</b>）`;
-  run.disabled = false;
+// ── 渲染 ────────────────────────────────────────────────────────────────
+function renderScaffold() {
+  const d = decoded[current];
+  $("srcNote").textContent = d ? d.note : "";
+  $("upPanel").hidden = current !== "upload";
+  $("specBefore").textContent = d ? specOf(d.wav) : (current === "upload" ? "等待选择文件" : "解码中…");
+  $("specAfter").textContent = "";
+  $("metBefore").textContent = ""; $("metAfter").textContent = "";
+  $("audioBefore").removeAttribute("src"); $("audioAfter").removeAttribute("src");
+  $("segBox").hidden = true;
+  $("skillRows").innerHTML = ""; $("segRows").innerHTML = "";
+  buildSteps([]);
+  draw($("waveBefore"), d ? d.wav : null, null);
+  draw($("waveAfter"), null, null);
+  const cached = results[current];
+  if (cached) { renderResult(current); return; }
+  const canRun = !!d && !running && (current !== "upload" || decoded.upload);
+  $("runBtn").disabled = !canRun;
+  $("runBtn").textContent = "运行处理管线";
 }
 
-// ── 一次点击，跑三个技能 ────────────────────────────────────────────────
-const fmtMs = (v) => v < 1 ? "<1 ms" : `${v.toFixed(0)} ms`;
-const dur = () => (sel.fb - sel.fa) / before.rate;
+function buildSteps(items) {
+  $("steps").innerHTML = items.map((it, i) =>
+    `<li data-i="${i}" class="${it.cls || ""}"><span class="dot"></span>
+       <span class="sl">${it.label}</span><span class="sd num">${it.detail || ""}</span></li>`).join("");
+}
 
-document.getElementById("run").addEventListener("click", async () => {
-  const btn = document.getElementById("run"), status = document.getElementById("status");
-  btn.disabled = true; status.textContent = "运行中…";
-  const input = sliceWav(before, sel.fa, sel.fb);
-  const rows = [], t0 = performance.now();
+function markStep(i, cls, detail) {
+  const li = $("steps").querySelector(`li[data-i="${i}"]`);
+  if (!li) return;
+  if (cls) li.className = cls;
+  if (detail !== undefined) li.querySelector(".sd").textContent = detail;
+}
+
+function renderResult(key) {
+  const R = results[key], d = decoded[key];
+  if (!R || !d) return;
+  $("srcNote").textContent = d.note;
+  $("specBefore").textContent = specOf(d.wav);
+  $("specAfter").textContent = specOf(R.after);
+  $("metBefore").innerHTML =
+    `实测响度 <b class="num">${R.lu.integrated_lufs.toFixed(1)} LUFS</b>` +
+    (R.lu.integrated_lufs < -30 ? `（<span class="bad">电平过轻</span>）` : "") +
+    ` · 峰值 <b class="num">${R.lu.sample_peak_dbfs.toFixed(1)} dBFS</b>`;
+  $("metAfter").innerHTML =
+    `成品复测 <b class="num">${R.afterLu.integrated_lufs.toFixed(1)} LUFS</b> · 峰值 <b class="num">${R.afterLu.sample_peak_dbfs.toFixed(1)} dBFS</b>` +
+    ` · 削波样本 <b class="num">${R.clips}</b> · 共 <b class="num">${R.totalMs.toFixed(0)} ms</b>` +
+    `（实时 <b class="num">${(durOf(d.wav) / (R.totalMs/1000)).toFixed(0)}×</b>）`;
+  buildSteps(R.steps.map(s => ({ label:s.label, detail:`${s.detail} · ${s.ms.toFixed(0)} ms`, cls:"done" })));
+  draw($("waveBefore"), d.wav, R.segs);
+  draw($("waveAfter"), R.after, null);
+  $("audioBefore").src = URL.createObjectURL(new Blob([d.buf], { type:"audio/wav" }));
+  $("audioAfter").src = URL.createObjectURL(new Blob([R.afterBuf], { type:"audio/wav" }));
+  $("runBtn").disabled = false;
+  $("runBtn").textContent = "重新运行";
+
+  // 每个技能的数据
+  $("skillRows").innerHTML = [
+    ["cmd/vad", `检出 <b>${R.segs.length}</b> 段语音 · 语音占比 <b>${((R.stats.ratio||0)*100).toFixed(0)}%</b>`, R.steps[0].ms],
+    ["cmd/resample", `${(d.wav.rate/1000).toFixed(1)} → ${(R.rs.rate/1000).toFixed(1)} kHz · 时长不变（${durOf(R.rs).toFixed(1)} s）`, R.steps[1].ms],
+    ["cmd/loudness", `${R.lu.integrated_lufs.toFixed(1)} LUFS · 峰值 ${R.lu.sample_peak_dbfs.toFixed(1)} dBFS · 到 -24 需 +${R.lu.gain_to_target_db.toFixed(1)} dB`, R.steps[2].ms],
+    ["组合链", `分段 + 16 kHz + 单声道 + 归一 -24 → 成品复测 ${R.afterLu.integrated_lufs.toFixed(1)} LUFS · 削波 ${R.clips}`, R.steps[3].ms],
+  ].map(([k, v, ms]) => `<tr><td class="num">${k}</td><td>${v}</td><td class="n num">${ms.toFixed(0)} ms</td></tr>`).join("");
+
+  const segs = R.segs.slice(0, 300);
+  $("segRows").innerHTML = segs.map((s, i) =>
+    `<tr><td class="num">${i+1}</td><td class="n num">${(s.start_ms/1000).toFixed(2)}</td>` +
+    `<td class="n num">${(s.end_ms/1000).toFixed(2)}</td><td class="n num">${((s.end_ms-s.start_ms)/1000).toFixed(2)}</td>` +
+    `<td class="n num">${(s.rms_dbfs !== undefined ? s.rms_dbfs.toFixed(1) : "-")}</td></tr>`).join("") +
+    (R.segs.length > 300 ? `<tr><td colspan="5">…共 ${R.segs.length} 段，此处显示前 300 段</td></tr>` : "");
+  $("segBox").hidden = R.segs.length === 0;
+  window.__mv.ran[key] = {
+    segs: R.segs.length, lufs: R.lu.integrated_lufs, afterLufs: R.afterLu.integrated_lufs,
+    afterDur: durOf(R.after), clips: R.clips, totalMs: R.totalMs,
+    afterUrl: $("audioAfter").src.startsWith("blob:"),
+  };
+}
+
+// ── 运行管线 ────────────────────────────────────────────────────────────
+const STEP_LABELS = ["VAD 分段", "重采样 48 → 16 kHz", "响度测量（EBU R128）", "组合链：分段 + 16 kHz + 单声道 + 归一 -24"];
+
+async function run(key) {
+  if (running) return;
+  const d = decoded[key];
+  if (!d) return;
+  running = true;
+  setStatus("");
+  $("runBtn").disabled = true;
+  $("specAfter").textContent = ""; $("metAfter").textContent = ""; $("metBefore").textContent = "";
+  $("skillRows").innerHTML = ""; $("segBox").hidden = true;
+  draw($("waveAfter"), null, null);
+  buildSteps(STEP_LABELS.map(l => ({ label:l })));
+  const R = { steps:[], afterBuf:null };
+  const t0 = performance.now();
   try {
     // ① cmd/vad：分段（JSON 输出）
-    const vad = await runSkill("vad", ["vad", "--resample", "16000"], input);
-    if (vad.err) throw new Error(vad.err);
-    const doc = JSON.parse(new TextDecoder().decode(vad.out));
-    segments = doc.segments;
-    const speech = (doc.stats.speech_ms / 1000).toFixed(1);
-    rows.push(["cmd/vad", `检出 <b>${doc.segments.length}</b> 段语音，共 ${speech} s` +
-               `（占比 ${(doc.stats.ratio * 100).toFixed(0)}%）`, vad.ms]);
+    markStep(0, "run");
+    let r = await runSkill("vad", ["vad","--resample","16000"], d.buf);
+    if (r.err) throw new Error(r.err.trim());
+    const vadDoc = JSON.parse(dec(r.out));
+    R.segs = vadDoc.segments; R.stats = vadDoc.stats || {};
+    R.steps.push({ label:STEP_LABELS[0], detail:`检出 ${R.segs.length} 段语音 · 占比 ${((R.stats.ratio||0)*100).toFixed(0)}%`, ms:r.ms });
+    markStep(0, "done", R.steps[0].detail + ` · ${r.ms.toFixed(0)} ms`);
 
-    // ② cmd/resample：独立的重采样技能
-    const rs = await runSkill("resample", ["resample", "--rate", "16000"], input);
-    if (rs.err) throw new Error(rs.err);
-    const rsWav = parseWav(rs.out.buffer);
-    rows.push(["cmd/resample", `${(before.rate/1000).toFixed(0)} kHz → <b>${(rsWav.rate/1000).toFixed(0)} kHz</b>，` +
-               `时长不变（${(rsWav.frames/rsWav.rate).toFixed(1)} s）`, rs.ms]);
+    // ② cmd/resample：独立重采样技能
+    markStep(1, "run");
+    r = await runSkill("resample", ["resample","--rate","16000"], d.buf);
+    if (r.err) throw new Error(r.err.trim());
+    R.rs = parseWav(r.out.buffer);
+    R.steps.push({ label:STEP_LABELS[1], detail:`${(d.wav.rate/1000).toFixed(1)} → ${(R.rs.rate/1000).toFixed(1)} kHz · 时长不变`, ms:r.ms });
+    markStep(1, "done", R.steps[1].detail + ` · ${r.ms.toFixed(0)} ms`);
 
-    // ③ cmd/loudness：测响度 + 给增益建议
-    const loud = await runSkill("loudness", ["loudness", "--target", "-16", "--json"], input);
-    if (loud.err) throw new Error(loud.err);
-    const lb = JSON.parse(new TextDecoder().decode(loud.out));
-    rows.push(["cmd/loudness", `积分响度 <b>${lb.integrated_lufs.toFixed(1)} LUFS</b>，` +
-               `峰 ${lb.sample_peak_dbfs.toFixed(1)} dBFS；到 −16 需 <b>${lb.gain_to_target_db >= 0 ? "+" : ""}${lb.gain_to_target_db.toFixed(1)} dB</b>`, loud.ms]);
+    // ③ cmd/loudness：EBU R128 测量
+    markStep(2, "run");
+    r = await runSkill("loudness", ["loudness","--target","-24","--json"], d.buf);
+    if (r.err) throw new Error(r.err.trim());
+    R.lu = JSON.parse(dec(r.out));
+    R.steps.push({ label:STEP_LABELS[2], detail:`${R.lu.integrated_lufs.toFixed(1)} LUFS · 峰值 ${R.lu.sample_peak_dbfs.toFixed(1)} dBFS`, ms:r.ms });
+    markStep(2, "done", R.steps[2].detail + ` · ${r.ms.toFixed(0)} ms`);
 
-    // ④ 三个技能组合成一条链：成品
-    const chain = await runSkill("vad",
-      ["vad", "--speech-only", "--resample", "16000", "--mono", "--normalize", "-16"], input);
-    if (chain.err.includes("失败")) throw new Error(chain.err);
-    const after = parseWav(chain.out.buffer);
-    rows.push(["组合链", `去静音 <b>${dur().toFixed(1)} → ${(after.frames/after.rate).toFixed(1)} s</b>，` +
-               `<b>${(after.rate/1000).toFixed(0)} kHz 单声道</b>，响度归一到 −16 LUFS`, chain.ms]);
+    // ④ 组合链 + 成品复测（闭环：对输出重新测响度、扫削波）
+    markStep(3, "run");
+    r = await runSkill("vad", ["vad","--speech-only","--resample","16000","--mono","--normalize","-24"], d.buf);
+    if (!r.out || !r.out.length || r.err.includes("失败")) throw new Error(r.err.trim() || "组合链输出为空");
+    R.afterBuf = r.out; R.after = parseWav(r.out.buffer); R.clips = clipCount(R.after);
+    const chainMs = r.ms;
+    r = await runSkill("loudness", ["loudness","--json"], R.afterBuf);
+    R.afterLu = JSON.parse(dec(r.out));
+    R.steps.push({ label:STEP_LABELS[3],
+      detail:`成品 ${durOf(R.after).toFixed(1)} s · 复测 ${R.afterLu.integrated_lufs.toFixed(1)} LUFS · 削波 ${R.clips}`,
+      ms:chainMs + r.ms });
+    markStep(3, "done", R.steps[3].detail + ` · ${(chainMs + r.ms).toFixed(0)} ms`);
 
-    document.getElementById("rows").innerHTML = rows.map(([k, v, ms]) =>
-      `<tr><td class="skill">${k}</td><td>${v}</td><td class="num">${fmtMs(ms)}</td></tr>`).join("");
-    document.getElementById("luNote").innerHTML =
-      `四个任务合计 <b>${(performance.now() - t0).toFixed(0)} ms</b> 处理 ${dur().toFixed(1)} 秒音频 ` +
-      `（${(dur() / ((performance.now() - t0) / 1000)).toFixed(0)}× 实时）。` +
-      `全部在浏览器里跑；模块已在页面加载后预热，这里的耗时反映稳态处理开销，` +
-      `不含浏览器的首次分层编译（那会慢 8 倍左右）。`;
-
-    document.getElementById("audioBefore").src = blobUrl(input);
-    document.getElementById("audioAfter").src = blobUrl(chain.out.buffer);
-    document.getElementById("afterDesc").textContent =
-      `${(after.rate/1000).toFixed(0)} kHz 单声道 · −16 LUFS · 已去静音`;
-    document.getElementById("result").classList.remove("hide");
-    document.getElementById("players").classList.remove("hide");
-    drawWave();
-    status.textContent = "";
+    R.totalMs = performance.now() - t0;
+    results[key] = R;
+    renderResult(key);
   } catch (e) {
-    status.textContent = "失败: " + e.message;
+    const li = $("steps").querySelector("li.run"); if (li) li.className = "fail";
+    setStatus("失败：" + (e && e.message ? e.message : e));
+    $("runBtn").disabled = false;
+    console.error(e);
   } finally {
-    btn.disabled = false;
+    running = false;
+  }
+}
+
+// ── 场景切换 / 上传 ─────────────────────────────────────────────────────
+$("tabs").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-scn]");
+  if (!btn || running) return;
+  const scn = btn.dataset.scn;
+  if (scn === current) return;
+  current = scn; window.__mv.current = scn;
+  for (const b of $("tabs").querySelectorAll("button")) b.setAttribute("aria-selected", String(b === btn));
+  setStatus("");
+  renderScaffold();
+  if (scn !== "upload" && !results[scn] && decoded[scn] && warmDone) run(scn);
+});
+
+$("fileIn").addEventListener("change", async () => {
+  const f = $("fileIn").files[0];
+  if (!f) return;
+  try {
+    setStatus("解码中…");
+    const ab0 = await new OfflineAudioContext(2, 48000, 48000).decodeAudioData(await f.arrayBuffer());
+    let ab = ab0, trimmed = false;
+    if (ab0.duration > 120) {
+      const cap = 120 * 48000, out = new OfflineAudioContext(ab0.numberOfChannels, cap, 48000)
+        .createBuffer(ab0.numberOfChannels, cap, 48000);
+      for (let c = 0; c < ab0.numberOfChannels; c++) out.copyToChannel(ab0.getChannelData(c).subarray(0, cap), c);
+      ab = out; trimmed = true;
+    }
+    const buf = audioBufferToWav(ab);
+    decoded.upload = { buf: buf, wav: parseWav(buf),
+                       note: `上传的录音：${f.name}${trimmed ? "（已截取前 120 秒）" : ""} · 本地处理，未上传` };
+    delete results.upload;
+    setStatus("");
+    renderScaffold();
+    run("upload");
+  } catch (e) {
+    setStatus("无法解码这个文件：" + (e && e.message ? e.message : e));
   }
 });
 
-window.addEventListener("resize", drawWave);
-drawWave();
+$("runBtn").addEventListener("click", () => run(current));
+
+// ── 启动 ────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    await Promise.all(Object.keys(SCENARIOS).map((k) => decodeScenario(k)));
+    window.__mv.ready = true;
+    renderScaffold();
+    await warmup();
+    warmDone = true; window.__mv.warm = true;
+    // 自动跑当前场景（默认办公室）；按钮此后为"重新运行"
+    run(current !== "upload" && decoded[current] ? current : "office");
+  } catch (e) {
+    setStatus("页面初始化失败：" + (e && e.message ? e.message : e));
+    console.error(e);
+  }
+})();
+
+window.addEventListener("resize", () => {
+  const d = decoded[current];
+  draw($("waveBefore"), d ? d.wav : null, results[current] ? results[current].segs : null);
+  draw($("waveAfter"), results[current] ? results[current].after : null, null);
+});
 </script>
 </body>
 </html>
