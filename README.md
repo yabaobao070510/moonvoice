@@ -133,21 +133,32 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 | 白噪声突发 | 融合 79.7% > 纯能量 74.4% > 纯谱 40.6% |
 | 持续语音 | 合并为单段，覆盖率 ≥ 85% |
 
-## 对照演示（可直接打开）
+## 交互演示（单文件，双击即开）
 
-[`demo/index.html`](demo/index.html) —— **单文件页面，双击即开，无需起服务器**。
-内嵌了音频与全部数据，可以边听边看：
+[`demo/index.html`](demo/index.html) —— 在**浏览器里真的运行**本仓库的 MoonBit 技能。
 
-- **波形 + 语音段**：绿色是 VAD 检出，蓝色虚线是构造真值；点任意图可跳转到该时刻
-- **线性幅度谱**与**mel 谱**：由 `tools/dump`（wasm 后端）算出
-- **对照组**（这是重点）：同一色标下并排给出
-  - `|A−B|`：我们 vs librosa 的差值 → **平均 6.7e-8 dB**（f32 样本精度的地板）
-  - `|C2−B|`：**少做一步面积归一化**的差值 → **平均 21.74 dB**
+打开后：拖动波形选一段 → 点「用 moonvoice 处理这段」→ 对比听处理前后的音频，
+同时看到处理耗时与实时倍率。
 
-  两者相差 9 个数量级。所以"和参照一致"才是个有内容的结论——
-  它排除了整类实现错误，而不是自说自话。
+**它没有预先算好任何结果。** 页面内嵌了 `cmd/vad` 的 wasm 编译产物（117 KB）与一个
+最小的 WASI 运行时（[`demo/wasi_shim.js`](demo/wasi_shim.js)，只实现技能实际 import 的
+5 个函数：`args_get` / `args_sizes_get` / `fd_read` / `fd_write` / `proc_exit`——
+可用 wasm 的 import 段核对），点击时真的把音频喂进去执行。
 
-重新生成：`python demo/gen_demo.py`（需要 moon 工具链 + librosa）。
+实测（Chrome，35.5 s 素材）：**48 kHz 立体声 → 16 kHz 单声道**、去掉静音段
+**35.5 s → 30.2 s**、响度 **−26.6 → −16 LUFS**，纯处理耗时 **2.2 s（16× 实时）**。
+
+素材：LibriSpeech（OpenSLR SLR31，**CC BY 4.0**）真人朗读，按未剪辑录音的形态组织
+（句间保留不均匀停顿）—— 语音内容完全真实。处理链本身 100% 由 moonvoice 组件完成。
+
+重新生成：
+```bash
+python demo/build_before.py <LibriSpeech flac 目录>   # 造输入素材
+ffmpeg -i demo/before.wav -c:a libmp3lame -b:a 128k demo/before.mp3
+moon build --release --target wasm cmd/vad
+python demo/build_page.py                            # 产出单文件 index.html
+python demo/_verify.py                               # 无头浏览器验证（真的跑一遍）
+```
 
 ## 原语与组合
 

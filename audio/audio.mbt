@@ -128,6 +128,20 @@ pub fn Audio::with_extra_chunks(
   }
 }
 
+///| 带上（可选的）来源格式：多声道→单声道这类重建场景用，避免丢掉格式标记
+pub fn Audio::with_source_format_opt(
+  self : Audio,
+  format : SampleFormat?,
+) -> Audio {
+  {
+    sample_rate: self.sample_rate,
+    channels: self.channels,
+    samples: self.samples,
+    extra_chunks: self.extra_chunks,
+    source_format: format,
+  }
+}
+
 ///| 带上来源格式（解码器与重采样用；普通调用者一般不需要）
 pub fn Audio::with_source_format(self : Audio, format : SampleFormat) -> Audio {
   {

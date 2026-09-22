@@ -2,293 +2,275 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>moonvoice 对照演示 — mel 质量与 VAD</title>
+<title>moonvoice — 在浏览器里处理一段音频</title>
 <style>
-  :root { --bg:#0f1117; --panel:#171a23; --line:#2a2f3a; --fg:#e6e9ef; --dim:#8b93a7;
-          --accent:#4ade80; --accent2:#60a5fa; --warn:#f87171; }
-  * { box-sizing: border-box; }
+  :root { --bg:#101216; --panel:#181c22; --line:#282e38; --fg:#e8ebf0; --dim:#8d97a8;
+          --accent:#2dd4bf; }
+  * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
-         font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
-  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px 60px; }
-  h1 { font-size:20px; margin:0 0 4px; }
-  h2 { font-size:15px; margin:28px 0 10px; color:var(--fg); }
-  h2 .note { font-weight:400; color:var(--dim); font-size:13px; margin-left:8px; }
-  p.lead { color:var(--dim); margin:0 0 18px; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-           padding:14px 16px; margin-bottom:14px; }
-  .row { display:flex; gap:14px; flex-wrap:wrap; }
-  .col { flex:1 1 300px; min-width:260px; }
-  .cap { font-size:12px; color:var(--dim); margin:6px 0 4px; }
-  .cap b { color:var(--fg); font-weight:600; }
-  .cap.num { font-family:ui-monospace,Consolas,monospace; color:var(--dim); }
-  canvas { display:block; width:100%; background:#0b0d12; border-radius:6px; cursor:crosshair; }
-  audio { width:100%; margin-top:6px; }
-  table { border-collapse:collapse; width:100%; font-size:13px; }
-  th,td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); }
-  th { color:var(--dim); font-weight:500; }
-  td.num { font-family:ui-monospace,Consolas,monospace; text-align:right; }
-  .ok { color:var(--accent); } .bad { color:var(--warn); }
-  .legend { display:flex; gap:16px; font-size:12px; color:var(--dim); margin-top:8px; flex-wrap:wrap; }
-  .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
-  .verdict { border-left:3px solid var(--accent); padding:10px 14px; background:#141a17;
-             border-radius:0 8px 8px 0; margin:14px 0; }
-  .verdict.warn { border-color:var(--warn); background:#1a1414; }
-  code { background:#0b0d12; padding:1px 5px; border-radius:4px; font-size:12px; }
+         font:15px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  main { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
+  h1 { font-size:19px; font-weight:600; margin:0 0 6px; }
+  .lead { color:var(--dim); margin:0 0 24px; }
+  .lead b { color:var(--fg); font-weight:600; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+            padding:16px; margin-bottom:14px; }
+  canvas { display:block; width:100%; height:132px; border-radius:6px;
+           background:#0b0e13; cursor:crosshair; }
+  .meta { color:var(--dim); font-size:13px; margin:10px 0 0; }
+  .meta b { color:var(--fg); font-weight:600; }
+  button { font:inherit; font-weight:600; padding:10px 20px; border-radius:8px; border:0;
+           background:var(--accent); color:#062b28; cursor:pointer; }
+  button:disabled { background:#2a3038; color:#6b7482; cursor:default; }
+  .row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  audio { width:100%; margin-top:10px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  td { padding:7px 0; border-bottom:1px solid var(--line); }
+  tr:last-child td { border-bottom:0; }
+  td:first-child { color:var(--dim); width:150px; }
+  td:last-child { font-family:ui-monospace,Consolas,monospace; }
+  .big { color:var(--accent); font-weight:600; }
+  .hide { display:none; }
+  code { background:#0b0e13; padding:1px 5px; border-radius:4px; font-size:13px; }
 </style>
 </head>
 <body>
-<div class="wrap">
+<main>
 
-  <h1>moonvoice 对照演示</h1>
+  <h1>在浏览器里用 moonvoice 处理一段音频</h1>
   <p class="lead">
-    纯 MoonBit 实现在浏览器里看到的一切，都由 <code>tools/dump</code>（wasm 后端）算出，
-    与 Python 参照实现（librosa / scipy）逐点比对。
-    <b>带对照组</b>：只看"我们和 librosa 一样"没有意义，同时给出"做错了会差多少"才有。
+    下面这个处理<strong>跑在你浏览器里的 WebAssembly 上</strong>——就是把本仓库的 MoonBit
+    技能 <code>cmd/vad</code> 编译成 wasm（117 KB）加载执行，不是预先算好的结果。
+    拖动波形选一段，处理，然后对比听。
   </p>
 
-  <div class="panel">
-    <audio id="player" controls preload="auto" src="__AUDIO_SRC__"></audio>
-    <div class="legend">
-      <span><span class="sw" style="background:#4ade80"></span>VAD 检出段</span>
-      <span><span class="sw" style="background:#60a5fa"></span>构造真值</span>
-      <span>点击任意图可跳转到该时间</span>
-    </div>
-  </div>
+  <section>
+    <canvas id="wave"></canvas>
+    <p class="meta" id="selInfo">拖动波形选择要处理的片段</p>
+  </section>
 
-  <h2>波形与语音段<span class="note">绿=检出，蓝线=构造真值（写死的真相）</span></h2>
-  <div class="panel"><canvas id="wave" height="150"></canvas></div>
+  <section class="row">
+    <button id="run" disabled>用 moonvoice 处理这段</button>
+    <span class="meta" id="status"></span>
+  </section>
 
-  <h2>线性幅度谱<span class="note">moonvoice 实现，n_fft=512 / hop=256</span></h2>
-  <div class="panel"><canvas id="spec" height="200"></canvas></div>
-
-  <h2>mel 谱对照<span class="note">同一段音频、同一组参数，三种实现并排</span></h2>
-  <div class="panel">
-    <div class="row">
-      <div class="col"><div class="cap"><b>A. moonvoice</b>（Slaney 标度 + 面积归一化）</div>
-        <canvas class="mel" id="melA" height="200"></canvas></div>
-      <div class="col"><div class="cap"><b>B. librosa</b>（参照实现）</div>
-        <canvas class="mel" id="melB" height="200"></canvas></div>
-      <div class="col"><div class="cap"><b>|A − B|</b> 差值</div>
-        <canvas class="mel" id="melAB" height="200"></canvas>
-        <div class="cap num" id="diffAB"></div></div>
-    </div>
-  </div>
-
-  <h2>对照组：把实现写错会差多少<span class="note">同样的音频、同样的色标</span></h2>
-  <div class="panel">
-    <div class="row">
-      <div class="col"><div class="cap"><b>C1. HTK 标度</b>（该用 Slaney 却用了 HTK）</div>
-        <canvas class="mel" id="melC1" height="200"></canvas></div>
-      <div class="col"><div class="cap"><b>C2. 不做面积归一化</b>（最常见的错法）</div>
-        <canvas class="mel" id="melC2" height="200"></canvas></div>
-      <div class="col"><div class="cap"><b>|C2 − B|</b> 差值（同一色标）</div>
-        <canvas class="mel" id="melC2D" height="200"></canvas>
-        <div class="cap num" id="diffC2"></div></div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <table id="stats">
-      <thead><tr><th>对比</th><th>最大绝对偏差</th><th>平均绝对偏差</th><th>含义</th></tr></thead>
-      <tbody></tbody>
+  <section id="result" class="hide">
+    <table>
+      <tr><td>原始片段</td><td id="mBefore"></td></tr>
+      <tr><td>处理结果</td><td id="mAfter"></td></tr>
+      <tr><td>处理耗时</td><td id="mTime"></td></tr>
+      <tr><td>实时倍率</td><td id="mRT"></td></tr>
     </table>
-    <div class="legend">
-      <span>差值图色标：<span style="background:#0b0d12;padding:1px 8px;border:1px solid var(--line)">1e-8 dB</span>
-        → <span style="background:#7a1c1c;padding:1px 8px">1e-3</span>
-        → <span style="background:#f87171;padding:1px 8px;color:#000">1e+1 dB</span>（对数刻度，三张图共用）</span>
-    </div>
-  </div>
+    <p class="meta" style="margin-top:14px">处理前（原样）</p>
+    <audio id="audioBefore" controls></audio>
+    <p class="meta" style="margin-top:8px">处理后（去静音 / 16 kHz 单声道 / −16 LUFS）</p>
+    <audio id="audioAfter" controls></audio>
+  </section>
 
-  <h2>怎么读这张表</h2>
-  <div class="panel">
-    <div class="verdict" id="verdict-ok"></div>
-    <div class="verdict warn" id="verdict-bad"></div>
-    <p style="color:var(--dim);margin:14px 0 0">
-      同一条链路里还有更多对拍：STFT 完全重构（5 种窗 SNR ≥ 100 dB）、重采样 vs scipy
-      （对 9 kHz 折回抑制 87.8 dB）、响度 vs pyloudnorm（&lt; 0.1 LU）、WAV 解码 vs libsndfile（逐样本相等）。
-      见仓库 <code>README.md</code> 与 <code>docs/retrospective.md</code>。
-    </p>
-  </div>
-</div>
+</main>
 
 <script>
-const DATA = __DATA__;
+// ── 内嵌资源（由 demo/build_page.py 注入） ────────────────────────────────
+const BEFORE_MP3_B64 = "__BEFORE_MP3__";
+const VAD_WASM_B64   = "__VAD_WASM__";
+const WASI_SHIM_SRC  = __SHIM__;   // 最小 WASI 运行时源码（字符串）
 
-const cv = id => document.getElementById(id);
-const player = cv('player');
-const meta = DATA.meta, F = meta.frames, M = meta.n_mels;
-
-function fit(canvas) {                       // 按设备像素比放大，避免糊
-  const r = canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
-  canvas.width = Math.round(r.width * d);
-  canvas.height = Math.round(canvas.height * d);
-  const g = canvas.getContext('2d');
-  g.setTransform(d, 0, 0, d, 0, 0);
-  g.clearRect(0, 0, r.width, canvas.height / d);
-  return { g, w: r.width, h: canvas.height / d };
+// ── WAV 读写（只处理 16-bit PCM —— 本页素材就是这个格式） ──────────────
+function parseWav(buf) {
+  const dv = new DataView(buf);
+  const tag = (o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o+1), dv.getUint8(o+2), dv.getUint8(o+3));
+  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") throw new Error("不是 WAV");
+  let p = 12, fmt = null, data = null;
+  while (p + 8 <= buf.byteLength) {
+    const id = tag(p), size = dv.getUint32(p + 4, true), body = p + 8;
+    if (id === "fmt ") {
+      fmt = { format: dv.getUint16(body, true), channels: dv.getUint16(body + 2, true),
+              rate: dv.getUint32(body + 4, true), bits: dv.getUint16(body + 14, true) };
+    } else if (id === "data") {
+      data = { offset: body, size };
+    }
+    p = body + size + (size % 2);
+  }
+  if (!fmt || !data) throw new Error("WAV 缺 fmt 或 data 块");
+  if (fmt.bits !== 16 || fmt.format !== 1) throw new Error("只支持 16-bit PCM");
+  return { ...fmt, dataOffset: data.offset, dataSize: data.size,
+           frames: data.size / (fmt.channels * 2) };
+}
+function sliceWav(w, startFrame, endFrame) {
+  const bpf = w.channels * 2;
+  const bytes = w.dataSize - startFrame * bpf > (endFrame - startFrame) * bpf
+    ? (endFrame - startFrame) * bpf : w.dataSize - startFrame * bpf;
+  const out = new ArrayBuffer(44 + bytes);
+  const dv = new DataView(out);
+  const put = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  put(0, "RIFF"); dv.setUint32(4, 36 + bytes, true); put(8, "WAVE");
+  put(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, w.channels, true); dv.setUint32(24, w.rate, true);
+  dv.setUint32(28, w.rate * bpf, true); dv.setUint16(32, bpf, true); dv.setUint16(34, 16, true);
+  put(36, "data"); dv.setUint32(40, bytes, true);
+  new Uint8Array(out, 44).set(new Uint8Array(w.buf, w.dataOffset + startFrame * bpf, bytes));
+  return out;
+}
+function b64ToBuf(b64) {
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
 }
 
-// 谱图色标：把 dB 映射到颜色（近似 magma）
-function specColor(v, lo, hi) {
-  let t = (v - lo) / (hi - lo);
-  t = Math.max(0, Math.min(1, t));
-  const r = Math.round(255 * Math.min(1, t * 1.6));
-  const gg = Math.round(255 * Math.max(0, t * 1.6 - 0.6) * 1.2);
-  const b = Math.round(255 * Math.max(0, 0.35 - Math.abs(t - 0.35)) * 2.2 + 30 * t);
-  return `rgb(${r},${gg},${b})`;
-}
-
-// 差值色标：**对数刻度**，三张差值图共用，所以"看不见"和"一片红"是可比的
-const DIFF_LO = -8, DIFF_HI = 1.5;          // 1e-8 dB .. ~30 dB
-function diffColor(d) {
-  if (d <= 0) return '#0b0d12';
-  const t = (Math.log10(d) - DIFF_LO) / (DIFF_HI - DIFF_LO);
-  const c = Math.max(0, Math.min(1, t));
-  return `rgb(${Math.round(40 + 215 * c)},${Math.round(20 + 40 * c)},${Math.round(30 + 30 * c)})`;
-}
-
-function drawMatrix(id, flat, lo, hi, colorFn) {
-  const { g, w, h } = fit(cv(id));
-  const cw = w / F, ch = h / M;
-  for (let f = 0; f < F; f++) {
-    for (let m = 0; m < M; m++) {
-      g.fillStyle = colorFn(flat[f * M + m], lo, hi);
-      g.fillRect(f * cw, h - (m + 1) * ch, cw + 1, ch + 1);   // mel 低在下
+// ── 加载素材 ────────────────────────────────────────────────────────────
+// 素材以 MP3 内嵌（体积只有 WAV 的 1/20；而且真实素材本来就是压缩格式）。
+// 用浏览器原生解码成 48 kHz 立体声，再还原成 WAV 字节——
+// 后面所有环节（选区、送进 wasm、播放）拿到的都是一份普通的 16-bit WAV。
+function audioBufferToWav(ab) {
+  const ch = ab.numberOfChannels, rate = ab.sampleRate, frames = ab.length;
+  const bpf = ch * 2;
+  const out = new ArrayBuffer(44 + frames * bpf);
+  const dv = new DataView(out);
+  const put = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  put(0, "RIFF"); dv.setUint32(4, 36 + frames * bpf, true); put(8, "WAVE");
+  put(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, ch, true); dv.setUint32(24, rate, true);
+  dv.setUint32(28, rate * bpf, true); dv.setUint16(32, bpf, true); dv.setUint16(34, 16, true);
+  put(36, "data"); dv.setUint32(40, frames * bpf, true);
+  const view = new DataView(out, 44);
+  const chans = [];
+  for (let c = 0; c < ch; c++) chans.push(ab.getChannelData(c));
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < ch; c++) {
+      const v = Math.max(-1, Math.min(1, chans[c][i]));
+      view.setInt16((i * ch + c) * 2, v < 0 ? v * 32768 : v * 32767, true);
     }
   }
+  return out;
 }
+const blobUrl = (buf, mime) => URL.createObjectURL(new Blob([buf], { type: mime }));
 
-function drawDiff(id, flat, other) {
-  const { g, w, h } = fit(cv(id));
-  const cw = w / F, ch = h / M;
-  for (let f = 0; f < F; f++) {
-    for (let m = 0; m < M; m++) {
-      const i = f * M + m;
-      g.fillStyle = diffColor(Math.abs(flat[i] - other[i]));
-      g.fillRect(f * cw, h - (m + 1) * ch, cw + 1, ch + 1);
-    }
-  }
-}
+let before = null;
+(async () => {
+  const ctx = new OfflineAudioContext(2, 48000, 48000);
+  const decoded = await ctx.decodeAudioData(b64ToBuf(BEFORE_MP3_B64).slice(0));
+  const buf = audioBufferToWav(decoded);
+  before = { ...parseWav(buf), buf };
+  drawWave();
+})();
+
+// ── 波形 + 拖拽选区 ─────────────────────────────────────────────────────
+const cv = document.getElementById("wave");
+let sel = null, drag = null;
 
 function drawWave() {
-  const { g, w, h } = fit(cv('wave'));
-  const wave = DATA.waveform, dur = meta.duration_ms;
-  const mid = h / 2;
-  // VAD 检出段（绿）
-  for (const s of meta.segments) {
-    const x0 = s.start_ms / dur * w, x1 = s.end_ms / dur * w;
-    g.fillStyle = 'rgba(74,222,128,0.18)';
-    g.fillRect(x0, 0, x1 - x0, h);
-    g.strokeStyle = '#4ade80'; g.lineWidth = 1;
-    g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0, h); g.moveTo(x1, 0); g.lineTo(x1, h); g.stroke();
+  if (!before) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  // 选区底色：告诉用户"这段会被送去处理"
+  if (sel) {
+    g.fillStyle = "rgba(45,212,191,0.14)";
+    g.fillRect(sel.a * w, 0, (sel.b - sel.a) * w, h);
   }
-  // 构造真值（蓝虚线）
-  const TRUTH = DATA.truth_ms;
-  g.setLineDash([5, 4]); g.strokeStyle = '#60a5fa';
-  for (const s of TRUTH) {
-    const x0 = s.start_ms / dur * w, x1 = s.end_ms / dur * w;
-    g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0, h); g.moveTo(x1, 0); g.lineTo(x1, h); g.stroke();
-  }
-  g.setLineDash([]);
-  // 波形
-  g.strokeStyle = '#9aa4b8'; g.lineWidth = 1; g.beginPath();
-  for (let i = 0; i < wave.length; i++) {
-    const x = i / wave.length * w;
-    const y = mid - wave[i] * mid * 0.92;
-    i ? g.lineTo(x, y) : g.moveTo(x, y);
+
+  // 波形：按像素列取该列的最大幅值（比抽样更能反映真实包络）
+  const s = new Int16Array(before.buf, before.dataOffset, before.dataSize / 2);
+  const ch = before.channels;
+  g.strokeStyle = "#5b6676"; g.lineWidth = 1; g.beginPath();
+  for (let x = 0; x < w; x++) {
+    const f0 = Math.floor(x / w * before.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / w * before.frames));
+    let mn = 0, mx = 0;
+    for (let f = f0; f < f1; f++) { const v = s[f * ch]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    const y0 = h / 2 - mx / 32768 * h / 2 * 0.95, y1 = h / 2 - mn / 32768 * h / 2 * 0.95;
+    g.moveTo(x + 0.5, y0); g.lineTo(x + 0.5, y1);
   }
   g.stroke();
 }
 
-function drawSpec() {
-  const { g, w, h } = fit(cv('spec'));
-  const bins = meta.bins ?? (DATA.spectrogram_db.length / F);
-  const flat = DATA.spectrogram_db;
-  let lo = 1e9, hi = -1e9;
-  for (const v of flat) { if (v > -60) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
-  const cw = w / F, ch = h / bins;
-  for (let f = 0; f < F; f++) {
-    for (let b = 0; b < bins; b++) {
-      g.fillStyle = specColor(flat[f * bins + b], lo, hi);
-      g.fillRect(f * cw, h - (b + 1) * ch, cw + 1, ch + 1);
-    }
+function posToFrame(ev) {
+  if (!before) return 0;
+  const r = cv.getBoundingClientRect();
+  return Math.max(0, Math.min(before.frames, Math.round((ev.clientX - r.left) / r.width * before.frames)));
+}
+const fmtT = (sec) => `${Math.floor(sec / 60)}:${String((sec % 60).toFixed(1)).padStart(4, "0")}`;
+
+cv.addEventListener("pointerdown", (e) => {
+  cv.setPointerCapture(e.pointerId);
+  drag = posToFrame(e); sel = null; drawWave(); updateSel();
+});
+cv.addEventListener("pointermove", (e) => {
+  if (drag === null) return;
+  const f = posToFrame(e);
+  sel = { a: Math.min(drag, f) / before.frames, b: Math.max(drag, f) / before.frames,
+          fa: Math.min(drag, f), fb: Math.max(drag, f) };
+  drawWave(); updateSel();
+});
+cv.addEventListener("pointerup", () => { drag = null; });
+
+function updateSel() {
+  const info = document.getElementById("selInfo"), run = document.getElementById("run");
+  if (!before) { info.textContent = "正在解码素材…"; run.disabled = true; return; }
+  if (!sel || sel.fb - sel.fa < before.rate * 0.2) {
+    info.textContent = "拖动波形选择要处理的片段（至少 0.2 秒）";
+    run.disabled = true; sel = null; return;
   }
+  info.innerHTML = `已选 <b>${fmtT(sel.fa / before.rate)} – ${fmtT(sel.fb / before.rate)}</b>` +
+                   `（<b>${((sel.fb - sel.fa) / before.rate).toFixed(1)} 秒</b>）`;
+  run.disabled = false;
 }
 
-// 播放头：画在所有图上的竖线
-function drawPlayhead() {
-  if (!player.duration) return;
-  const t = player.currentTime / player.duration;
-  for (const id of ['wave', 'spec', 'melA', 'melB', 'melAB', 'melC1', 'melC2', 'melC2D']) {
-    const c = cv(id); if (!c) continue;
-    const g = c.getContext('2d'), d = window.devicePixelRatio || 1;
-    const w = c.width / d, h = c.height / d;
-    g.setTransform(d, 0, 0, d, 0, 0);
-    g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(t * w, 0); g.lineTo(t * w, h); g.stroke();
+// ── 在浏览器里跑 wasm 技能 ──────────────────────────────────────────────
+const ARGV = ["vad", "--speech-only", "--resample", "16000", "--mono", "--normalize", "-16"];
+const wasmBytes = b64ToBuf(VAD_WASM_B64);
+// 把 shim 源码求值成一个函数：源码里定义 makeWASI，这里把它取出来
+const makeWASI = new Function(WASI_SHIM_SRC + "\nreturn makeWASI;")();
+// 编译一次、复用：第一次点击的耗时会含编译（如实标注），之后是纯处理耗时
+let compiledModule = null;
+
+document.getElementById("run").addEventListener("click", async () => {
+  const btn = document.getElementById("run"), status = document.getElementById("status");
+  btn.disabled = true; status.textContent = "处理中…";
+  try {
+    const input = sliceWav(before, sel.fa, sel.fb);
+    const t0 = performance.now();
+    const wasCompiled = compiledModule !== null;
+    if (!compiledModule) compiledModule = await WebAssembly.compile(wasmBytes);
+    const tCompile = performance.now() - t0;
+    const wasi = makeWASI(ARGV, new Uint8Array(input));
+    const instance = await WebAssembly.instantiate(compiledModule, wasi.imports);
+    wasi.bind(instance.exports.memory);
+    const t1 = performance.now();
+    try { instance.exports._start(); } catch (e) { if (!e.exitCode) throw e; }
+    const ms = performance.now() - t1;       // 纯处理耗时（编译另计）
+    wasi.bind(instance.exports.memory);
+
+    const outBuf = wasi.stdout().buffer;
+    const after = parseWav(outBuf);
+
+    document.getElementById("audioBefore").src = blobUrl(input, "audio/wav");
+    document.getElementById("audioAfter").src = blobUrl(outBuf, "audio/wav");
+    document.getElementById("mBefore").textContent =
+      `${(before.rate/1000).toFixed(0)} kHz · ${before.channels} 声道 · ${((sel.fb-sel.fa)/before.rate).toFixed(1)} s`;
+    document.getElementById("mAfter").textContent =
+      `${(after.rate/1000).toFixed(0)} kHz · ${after.channels} 声道 · ${(after.frames/after.rate).toFixed(1)} s`;
+    document.getElementById("mTime").innerHTML =
+      `<span class="big">${ms.toFixed(0)} ms</span>` +
+      (wasCompiled ? "" : `（另有 wasm 编译 ${tCompile.toFixed(0)} ms，仅首次）`);
+    document.getElementById("mRT").innerHTML =
+      `<span class="big">${(((sel.fb-sel.fa)/before.rate)/(ms/1000)).toFixed(0)}×</span> 实时` +
+      `（wasm 在浏览器里，无 JIT 预热）`;
+    document.getElementById("result").classList.remove("hide");
+    const err = wasi.stderr();
+    status.textContent = err.includes("响度") ? err.trim().split("\n").pop() : "";
+  } catch (e) {
+    status.textContent = "失败: " + e.message;
+  } finally {
+    btn.disabled = false;
   }
-}
+});
 
-function seekFrom(ev, canvas) {
-  const r = canvas.getBoundingClientRect();
-  const t = (ev.clientX - r.left) / r.width;
-  if (player.duration) player.currentTime = t * player.duration;
-}
-
-function render() {
-  drawWave(); drawSpec();
-  drawMatrix('melA', DATA.mel.ours, -60, 20, specColor);
-  drawMatrix('melB', DATA.mel.ref, -60, 20, specColor);
-  drawDiff('melAB', DATA.mel.ours, DATA.mel.ref);
-  drawMatrix('melC1', DATA.mel.htk, -60, 20, specColor);
-  drawMatrix('melC2', DATA.mel.nonorm, -60, 20, specColor);
-  drawDiff('melC2D', DATA.mel.nonorm, DATA.mel.ref);
-  drawPlayhead();
-  renderStats();
-  // 差值图必须带数字：颜色单独看会被误读（A−B 不是纯黑，因为差异确实是 1e-7 而非 0）
-  const s = DATA.stats;
-  cv('diffAB').innerHTML = `最大 <b>${fmt(s.ours_vs_ref.max_abs_db)}</b> · 平均 <b>${fmt(s.ours_vs_ref.mean_abs_db)}</b>`;
-  cv('diffC2').innerHTML = `最大 <b>${fmt(s.nonorm_vs_ref.max_abs_db)}</b> · 平均 <b>${fmt(s.nonorm_vs_ref.mean_abs_db)}</b>`;
-}
-
-function fmt(x) {
-  if (x === 0) return '0';
-  if (x < 1e-4) return x.toExponential(2) + ' dB';
-  return x.toFixed(2) + ' dB';
-}
-
-function renderStats() {
-  const s = DATA.stats;
-  const rows = [
-    ['A 我们 vs B librosa', s.ours_vs_ref, 'ok',
-     '与参照实现一致（差异在 f32 样本精度的地板）'],
-    ['C1 HTK 标度 vs B', s.htk_vs_ref, 'bad',
-     '用错 mel 标度 → 中低频段系统性偏移'],
-    ['C2 无面积归一化 vs B', s.nonorm_vs_ref, 'bad',
-     '不做 Slaney 归一化 → 高频带整体偏低（最常见错法）'],
-  ];
-  document.querySelector('#stats tbody').innerHTML = rows.map(([n, v, cls, why]) =>
-    `<tr><td>${n}</td><td class="num ${cls}">${fmt(v.max_abs_db)}</td>` +
-    `<td class="num ${cls}">${fmt(v.mean_abs_db)}</td><td style="color:var(--dim)">${why}</td></tr>`
-  ).join('');
-
-  const a = s.ours_vs_ref.mean_abs_db, c = s.nonorm_vs_ref.mean_abs_db;
-  cv('verdict-ok').innerHTML =
-    `<b>结论</b>：moonvoice 的 mel 前端与 librosa 的平均偏差 <b>${fmt(a)}</b>，` +
-    `差异量级等于 f32 样本本身能表示的精度——不是"接近"，是<b>到了浮点地板</b>。`;
-  cv('verdict-bad').innerHTML =
-    `<b>对照组的含义</b>：同样是"输出一张 mel 谱"，少做一步面积归一化，` +
-    `平均偏差就有 <b>${fmt(c)}</b>（差 ${Math.round(c / Math.max(a, 1e-12))} 个数量级）。` +
-    `所以"和参照一致到 1e-7"才是个有内容的结论——它排除了整类实现错误，而不是自说自话。`;
-}
-
-player.addEventListener('timeupdate', drawPlayhead);
-player.addEventListener('seeked', drawPlayhead);
-for (const id of ['wave', 'spec', 'melA', 'melB', 'melAB', 'melC1', 'melC2', 'melC2D']) {
-  cv(id).addEventListener('click', e => seekFrom(e, cv(id)));
-}
-window.addEventListener('resize', render);
-render();
+window.addEventListener("resize", drawWave);
+drawWave();
 </script>
 </body>
 </html>

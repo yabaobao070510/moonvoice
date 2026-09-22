@@ -4,6 +4,6 @@ target/
 target
 .mooncakes/
 .moonagent/
-# 演示页的中间产物（由 demo/gen_demo.py 重新生成；index.html 是产物但入库，见 README）
-demo/data.json
-demo/audio.wav
+# 演示素材：before.wav 15 MB，可由 demo/build_before.py 从 LibriSpeech 再生（见 README）
+demo/before.wav
+demo/_shot*.png

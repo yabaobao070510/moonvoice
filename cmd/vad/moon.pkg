@@ -1,6 +1,7 @@
 import {
   "moonbit-community/miniio",
   "yabaobao/moonvoice/audio",
+  "yabaobao/moonvoice/feature",
   "yabaobao/moonvoice/resample" @mbres,
   "yabaobao/moonvoice/vad" @mbvad,
 }

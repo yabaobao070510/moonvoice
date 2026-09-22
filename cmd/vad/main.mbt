@@ -34,6 +34,8 @@ struct Options {
   target_rate : Int // 0 表示不重采样
   indent : Int // 0 表示紧凑输出
   speech_only : Bool // 输出"去掉静音的干净语音"而不是 JSON
+  normalize : Double // 响度归一化目标（LUFS）；仅 speech-only 时生效，-100 表示不归一
+  mono : Bool // speech-only 时混成单声道（识别器/配音流水线的标准输入）
   help : Bool
 }
 
@@ -47,10 +49,60 @@ const USAGE : String = "moonvoice/vad — 把音频切成可识别的语音段\n
   "  --min-speech MS                 短于此值的段丢弃（默认 180）\n" +
   "  --pad MS                        段前后补白（默认 60）\n" +
   "  --resample HZ                   先重采样到此采样率（如 16000）\n" +
+  "  --speech-only                   输出「去掉静音的干净语音」（WAV）而不是 JSON\n" +
+  "  --normalize LUFS                把输出响度归一到目标（配 --speech-only，如 -16）\n" +
   "  --indent N                      JSON 缩进（默认 0，紧凑）\n" +
   "  --help                          显示本帮助\n" +
   "\n" +
   "输入必须是 WAV（stdin）；输出为 JSON（stdout）。"
+
+///| 解析浮点（支持负号与小数点；String 无 char_at，先转字符数组）
+fn parse_double(name : String, s : String) -> Double raise CliError {
+  let chars = s.to_array()
+  let mut i = 0
+  let mut neg = false
+  if chars.length() > 0 && chars[0] == '-' {
+    neg = true
+    i = 1
+  }
+  let mut v = 0.0
+  let mut frac = 1.0
+  let mut in_frac = false
+  let mut seen = false
+  while i < chars.length() {
+    let c = chars[i]
+    if c == '.' {
+      in_frac = true
+    } else {
+      let d = c.to_int() - 48
+      if d < 0 || d > 9 {
+        raise BadUsage(name + " 不是合法数字: " + s)
+      }
+      seen = true
+      if in_frac {
+        frac = frac / 10.0
+        v = v + d.to_double() * frac
+      } else {
+        v = v * 10.0 + d.to_double()
+      }
+    }
+    i = i + 1
+  }
+  if !seen {
+    raise BadUsage(name + " 不是合法数字: " + s)
+  }
+  if neg {
+    -v
+  } else {
+    v
+  }
+}
+
+///| 一位小数（用于 stderr 的人类可读输出）
+fn fmt1(x : Double) -> String {
+  let v = (x * 10.0 + 0.5 * (if x < 0.0 { -1.0 } else { 1.0 })).to_int().to_double() / 10.0
+  v.to_string()
+}
 
 fn parse_int(name : String, s : String) -> Int raise CliError {
   let mut v = 0
@@ -77,6 +129,8 @@ fn parse_args(args : Array[String]) -> Options raise CliError {
     target_rate: 0,
     indent: 0,
     speech_only: false,
+    normalize: -100.0,
+    mono: false,
     help: false,
   }
   let mut i = 0
@@ -118,6 +172,12 @@ fn parse_args(args : Array[String]) -> Options raise CliError {
       i = i + 2
     } else if a == "--resample" {
       opts = { ..opts, target_rate: parse_int(a, next) }
+      i = i + 2
+    } else if a == "--mono" {
+      opts = { ..opts, mono: true }
+      i = i + 1
+    } else if a == "--normalize" {
+      opts = { ..opts, normalize: parse_double(a, next) }
       i = i + 2
     } else if a == "--speech-only" {
       opts = { ..opts, speech_only: true }
@@ -161,7 +221,33 @@ fn run() -> Unit raise {
   if opts.speech_only {
     // 只保留语音：检出 → 切片 → 拼接（原语组合，见 vad.speech_only）
     let joined = @mbvad.speech_only(audio, result.segments())
-    @miniio.stdout.write(@audio.encode_wav(joined))
+    // 可选：混单声道。识别器与配音流水线要的都是单声道输入；
+    // 做成显式开关而不是默认行为——强制转换会丢掉调用方可能需要的声道信息。
+    let joined = if opts.mono {
+      @audio.Audio::new(
+        joined.sample_rate(),
+        1,
+        joined.to_mono(),
+      ).with_source_format_opt(joined.source_format())
+    } else {
+      joined
+    }
+    // 可选：响度归一。这一步让"可直接使用的素材"一次成型，
+    // 否则调用方还得再跑一次 loudness 再自己施加增益。
+    let out = if opts.normalize > -100.0 {
+      let measured = @feature.measure_loudness(joined)
+      let gain = opts.normalize - measured.integrated_lufs()
+      @miniio.stderr.write_text(
+        "响度: " + fmt1(measured.integrated_lufs()) + " → " + fmt1(opts.normalize) +
+        " LUFS（增益 " + fmt1(gain) + " dB）\n",
+      ) catch {
+        _ => ()
+      }
+      joined.apply_gain_db(gain)
+    } else {
+      joined
+    }
+    @miniio.stdout.write(@audio.encode_wav(out))
     return
   }
   let json = if opts.indent > 0 {
