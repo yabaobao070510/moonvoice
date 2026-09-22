@@ -2,17 +2,17 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>moonvoice — 在浏览器里处理一段音频</title>
+<title>moonvoice — 在浏览器里运行三个技能</title>
 <style>
   :root { --bg:#101216; --panel:#181c22; --line:#282e38; --fg:#e8ebf0; --dim:#8d97a8;
           --accent:#2dd4bf; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
-  main { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
+  main { max-width:940px; margin:0 auto; padding:32px 20px 64px; }
   h1 { font-size:19px; font-weight:600; margin:0 0 6px; }
-  .lead { color:var(--dim); margin:0 0 24px; }
-  .lead b { color:var(--fg); font-weight:600; }
+  .lead { color:var(--dim); margin:0 0 22px; }
+  .lead strong { color:var(--fg); font-weight:600; }
   section { background:var(--panel); border:1px solid var(--line); border-radius:10px;
             padding:16px; margin-bottom:14px; }
   canvas { display:block; width:100%; height:132px; border-radius:6px;
@@ -23,25 +23,29 @@
            background:var(--accent); color:#062b28; cursor:pointer; }
   button:disabled { background:#2a3038; color:#6b7482; cursor:default; }
   .row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  audio { width:100%; margin-top:10px; }
+  audio { width:100%; margin-top:8px; }
   table { border-collapse:collapse; width:100%; font-size:14px; }
-  td { padding:7px 0; border-bottom:1px solid var(--line); }
+  th,td { padding:9px 10px 9px 0; border-bottom:1px solid var(--line); text-align:left;
+          vertical-align:top; }
   tr:last-child td { border-bottom:0; }
-  td:first-child { color:var(--dim); width:150px; }
-  td:last-child { font-family:ui-monospace,Consolas,monospace; }
+  th { color:var(--dim); font-weight:500; font-size:13px; }
+  td.skill { font-family:ui-monospace,Consolas,monospace; white-space:nowrap; }
+  td.num { font-family:ui-monospace,Consolas,monospace; text-align:right; color:var(--dim);
+           white-space:nowrap; }
   .big { color:var(--accent); font-weight:600; }
   .hide { display:none; }
   code { background:#0b0e13; padding:1px 5px; border-radius:4px; font-size:13px; }
+  .hint { color:var(--dim); font-size:13px; margin:14px 0 0; }
 </style>
 </head>
 <body>
 <main>
 
-  <h1>在浏览器里用 moonvoice 处理一段音频</h1>
+  <h1>在浏览器里运行 moonvoice 的三个技能</h1>
   <p class="lead">
-    下面这个处理<strong>跑在你浏览器里的 WebAssembly 上</strong>——就是把本仓库的 MoonBit
-    技能 <code>cmd/vad</code> 编译成 wasm（117 KB）加载执行，不是预先算好的结果。
-    拖动波形选一段，处理，然后对比听。
+    下面每一步都<strong>跑在你浏览器里的 WebAssembly 上</strong>——就是把本仓库的三个 MoonBit
+    技能编译成 wasm 后加载执行（共 286 KB），不是预先算好的结果。
+    拖动波形选一段，点一次，看三个技能各自做了什么、各花多久。
   </p>
 
   <section>
@@ -50,20 +54,22 @@
   </section>
 
   <section class="row">
-    <button id="run" disabled>用 moonvoice 处理这段</button>
+    <button id="run" disabled>运行三个技能</button>
     <span class="meta" id="status"></span>
   </section>
 
   <section id="result" class="hide">
     <table>
-      <tr><td>原始片段</td><td id="mBefore"></td></tr>
-      <tr><td>处理结果</td><td id="mAfter"></td></tr>
-      <tr><td>处理耗时</td><td id="mTime"></td></tr>
-      <tr><td>实时倍率</td><td id="mRT"></td></tr>
+      <thead><tr><th>技能</th><th>结果</th><th style="text-align:right">耗时</th></tr></thead>
+      <tbody id="rows"></tbody>
     </table>
-    <p class="meta" style="margin-top:14px">处理前（原样）</p>
+    <p class="hint" id="luNote"></p>
+  </section>
+
+  <section id="players" class="hide">
+    <p class="meta" style="margin-top:0">处理前（原样）</p>
     <audio id="audioBefore" controls></audio>
-    <p class="meta" style="margin-top:8px">处理后（去静音 / 16 kHz 单声道 / −16 LUFS）</p>
+    <p class="meta">处理后（<span id="afterDesc"></span>）</p>
     <audio id="audioAfter" controls></audio>
   </section>
 
@@ -72,8 +78,8 @@
 <script>
 // ── 内嵌资源（由 demo/build_page.py 注入） ────────────────────────────────
 const BEFORE_MP3_B64 = "__BEFORE_MP3__";
-const VAD_WASM_B64   = "__VAD_WASM__";
-const WASI_SHIM_SRC  = __SHIM__;   // 最小 WASI 运行时源码（字符串）
+const WASM_B64 = { vad: "__WASM_VAD__", resample: "__WASM_RESAMPLE__", loudness: "__WASM_LOUDNESS__" };
+const WASI_SHIM_SRC = __SHIM__;
 
 // ── WAV 读写（只处理 16-bit PCM —— 本页素材就是这个格式） ──────────────
 function parseWav(buf) {
@@ -86,9 +92,7 @@ function parseWav(buf) {
     if (id === "fmt ") {
       fmt = { format: dv.getUint16(body, true), channels: dv.getUint16(body + 2, true),
               rate: dv.getUint32(body + 4, true), bits: dv.getUint16(body + 14, true) };
-    } else if (id === "data") {
-      data = { offset: body, size };
-    }
+    } else if (id === "data") { data = { offset: body, size }; }
     p = body + size + (size % 2);
   }
   if (!fmt || !data) throw new Error("WAV 缺 fmt 或 data 块");
@@ -98,8 +102,8 @@ function parseWav(buf) {
 }
 function sliceWav(w, startFrame, endFrame) {
   const bpf = w.channels * 2;
-  const bytes = w.dataSize - startFrame * bpf > (endFrame - startFrame) * bpf
-    ? (endFrame - startFrame) * bpf : w.dataSize - startFrame * bpf;
+  const want = (endFrame - startFrame) * bpf;
+  const bytes = Math.min(want, w.dataSize - startFrame * bpf);
   const out = new ArrayBuffer(44 + bytes);
   const dv = new DataView(out);
   const put = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
@@ -116,14 +120,8 @@ function b64ToBuf(b64) {
   for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
   return u.buffer;
 }
-
-// ── 加载素材 ────────────────────────────────────────────────────────────
-// 素材以 MP3 内嵌（体积只有 WAV 的 1/20；而且真实素材本来就是压缩格式）。
-// 用浏览器原生解码成 48 kHz 立体声，再还原成 WAV 字节——
-// 后面所有环节（选区、送进 wasm、播放）拿到的都是一份普通的 16-bit WAV。
 function audioBufferToWav(ab) {
-  const ch = ab.numberOfChannels, rate = ab.sampleRate, frames = ab.length;
-  const bpf = ch * 2;
+  const ch = ab.numberOfChannels, rate = ab.sampleRate, frames = ab.length, bpf = ch * 2;
   const out = new ArrayBuffer(44 + frames * bpf);
   const dv = new DataView(out);
   const put = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
@@ -133,18 +131,53 @@ function audioBufferToWav(ab) {
   dv.setUint32(28, rate * bpf, true); dv.setUint16(32, bpf, true); dv.setUint16(34, 16, true);
   put(36, "data"); dv.setUint32(40, frames * bpf, true);
   const view = new DataView(out, 44);
-  const chans = [];
-  for (let c = 0; c < ch; c++) chans.push(ab.getChannelData(c));
-  for (let i = 0; i < frames; i++) {
+  const chans = []; for (let c = 0; c < ch; c++) chans.push(ab.getChannelData(c));
+  for (let i = 0; i < frames; i++)
     for (let c = 0; c < ch; c++) {
       const v = Math.max(-1, Math.min(1, chans[c][i]));
       view.setInt16((i * ch + c) * 2, v < 0 ? v * 32768 : v * 32767, true);
     }
-  }
   return out;
 }
-const blobUrl = (buf, mime) => URL.createObjectURL(new Blob([buf], { type: mime }));
+const blobUrl = (buf) => URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
 
+// ── wasm 运行：每个技能一个独立实例（互不干扰），模块编译结果缓存 ────────
+const makeWASI = new Function(WASI_SHIM_SRC + "\nreturn makeWASI;")();
+const modules = {};            // 编译缓存：首次点击含编译，之后是纯处理
+async function getModule(key) {
+  if (!modules[key]) modules[key] = await WebAssembly.compile(b64ToBuf(WASM_B64[key]));
+  return modules[key];
+}
+async function runSkill(key, argv, inputBuf) {
+  const mod = await getModule(key);
+  const wasi = makeWASI(argv, new Uint8Array(inputBuf));
+  const instance = await WebAssembly.instantiate(mod, wasi.imports);
+  wasi.bind(instance.exports.memory);
+  const t0 = performance.now();
+  try { instance.exports._start(); } catch (e) { if (!e.exitCode) throw e; }
+  const ms = performance.now() - t0;
+  wasi.bind(instance.exports.memory);     // 执行中内存可能增长，重新绑定
+  return { out: wasi.stdout(), err: wasi.stderr(), ms };
+}
+
+// 预热：浏览器的 wasm 引擎是分层编译的，模块**首次执行**会跑在慢档上
+// （实测首次 ~2.1 s、热了之后 ~0.3 s）。不预热的话，"耗时"报的是启动开销而不是处理开销，
+// 那会误导人。所以在页面加载后、用户还在拖选区的时候，就用一小段静音把三个模块各跑一遍。
+async function warmup() {
+  // 必须用**真实的 argv 与真实长度的输入**：参数写错会让技能立刻报错退出，
+  // 热路径根本没跑到，预热等于没做（这是实测踩过的坑）。
+  const slice = sliceWav(before, 0, Math.min(before.frames, before.rate * 3));   // 前 3 秒
+  const jobs = [
+    ["vad", ["vad", "--resample", "16000"]],
+    ["resample", ["resample", "--rate", "16000"]],
+    ["loudness", ["loudness", "--target", "-16", "--json"]],
+  ];
+  for (const [k, argv] of jobs) {
+    try { await runSkill(k, argv, slice); } catch (e) { /* 预热失败不影响主流程 */ }
+  }
+}
+
+// ── 素材：MP3 内嵌（体积 1/20；真实素材本来就是压缩格式）→ 解码成 48k 立体声 WAV
 let before = null;
 (async () => {
   const ctx = new OfflineAudioContext(2, 48000, 48000);
@@ -152,52 +185,56 @@ let before = null;
   const buf = audioBufferToWav(decoded);
   before = { ...parseWav(buf), buf };
   drawWave();
+  warmup();     // 后台预热，不阻塞界面
 })();
 
 // ── 波形 + 拖拽选区 ─────────────────────────────────────────────────────
 const cv = document.getElementById("wave");
-let sel = null, drag = null;
+let sel = null, drag = null, segments = null;
 
 function drawWave() {
   if (!before) return;
-  const dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth, h = cv.clientHeight;
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   cv.width = w * dpr; cv.height = h * dpr;
   const g = cv.getContext("2d");
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, w, h);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
 
-  // 选区底色：告诉用户"这段会被送去处理"
-  if (sel) {
-    g.fillStyle = "rgba(45,212,191,0.14)";
-    g.fillRect(sel.a * w, 0, (sel.b - sel.a) * w, h);
+  if (sel) { g.fillStyle = "rgba(45,212,191,0.12)"; g.fillRect(sel.a * w, 0, (sel.b - sel.a) * w, h); }
+
+  // 检出语音段：画在选区之上，直接回答"VAD 认为哪几段是语音"
+  // 段的时间是**相对所选片段**的毫秒，按比例映射到选区的像素范围即可
+  if (segments && sel) {
+    const selMs = (sel.fb - sel.fa) / before.rate * 1000;
+    const x0 = sel.a * w, spanW = (sel.b - sel.a) * w;
+    g.fillStyle = "rgba(45,212,191,0.22)";
+    for (const s of segments) {
+      const a = x0 + s.start_ms / selMs * spanW;
+      const b = x0 + s.end_ms / selMs * spanW;
+      g.fillRect(a, 0, Math.max(1, b - a), h);
+    }
   }
 
-  // 波形：按像素列取该列的最大幅值（比抽样更能反映真实包络）
-  const s = new Int16Array(before.buf, before.dataOffset, before.dataSize / 2);
+  const s16 = new Int16Array(before.buf, before.dataOffset, before.dataSize / 2);
   const ch = before.channels;
   g.strokeStyle = "#5b6676"; g.lineWidth = 1; g.beginPath();
   for (let x = 0; x < w; x++) {
     const f0 = Math.floor(x / w * before.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / w * before.frames));
     let mn = 0, mx = 0;
-    for (let f = f0; f < f1; f++) { const v = s[f * ch]; if (v < mn) mn = v; if (v > mx) mx = v; }
-    const y0 = h / 2 - mx / 32768 * h / 2 * 0.95, y1 = h / 2 - mn / 32768 * h / 2 * 0.95;
-    g.moveTo(x + 0.5, y0); g.lineTo(x + 0.5, y1);
+    for (let f = f0; f < f1; f++) { const v = s16[f * ch]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    g.moveTo(x + 0.5, h / 2 - mx / 32768 * h / 2 * 0.95);
+    g.lineTo(x + 0.5, h / 2 - mn / 32768 * h / 2 * 0.95);
   }
   g.stroke();
 }
 
-function posToFrame(ev) {
+const posToFrame = (ev) => {
   if (!before) return 0;
   const r = cv.getBoundingClientRect();
   return Math.max(0, Math.min(before.frames, Math.round((ev.clientX - r.left) / r.width * before.frames)));
-}
-const fmtT = (sec) => `${Math.floor(sec / 60)}:${String((sec % 60).toFixed(1)).padStart(4, "0")}`;
+};
+const fmtT = (s) => `${Math.floor(s / 60)}:${String((s % 60).toFixed(1)).padStart(4, "0")}`;
 
-cv.addEventListener("pointerdown", (e) => {
-  cv.setPointerCapture(e.pointerId);
-  drag = posToFrame(e); sel = null; drawWave(); updateSel();
-});
+cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); drag = posToFrame(e); sel = null; segments = null; drawWave(); updateSel(); });
 cv.addEventListener("pointermove", (e) => {
   if (drag === null) return;
   const f = posToFrame(e);
@@ -219,49 +256,63 @@ function updateSel() {
   run.disabled = false;
 }
 
-// ── 在浏览器里跑 wasm 技能 ──────────────────────────────────────────────
-const ARGV = ["vad", "--speech-only", "--resample", "16000", "--mono", "--normalize", "-16"];
-const wasmBytes = b64ToBuf(VAD_WASM_B64);
-// 把 shim 源码求值成一个函数：源码里定义 makeWASI，这里把它取出来
-const makeWASI = new Function(WASI_SHIM_SRC + "\nreturn makeWASI;")();
-// 编译一次、复用：第一次点击的耗时会含编译（如实标注），之后是纯处理耗时
-let compiledModule = null;
+// ── 一次点击，跑三个技能 ────────────────────────────────────────────────
+const fmtMs = (v) => v < 1 ? "<1 ms" : `${v.toFixed(0)} ms`;
+const dur = () => (sel.fb - sel.fa) / before.rate;
 
 document.getElementById("run").addEventListener("click", async () => {
   const btn = document.getElementById("run"), status = document.getElementById("status");
-  btn.disabled = true; status.textContent = "处理中…";
+  btn.disabled = true; status.textContent = "运行中…";
+  const input = sliceWav(before, sel.fa, sel.fb);
+  const rows = [], t0 = performance.now();
   try {
-    const input = sliceWav(before, sel.fa, sel.fb);
-    const t0 = performance.now();
-    const wasCompiled = compiledModule !== null;
-    if (!compiledModule) compiledModule = await WebAssembly.compile(wasmBytes);
-    const tCompile = performance.now() - t0;
-    const wasi = makeWASI(ARGV, new Uint8Array(input));
-    const instance = await WebAssembly.instantiate(compiledModule, wasi.imports);
-    wasi.bind(instance.exports.memory);
-    const t1 = performance.now();
-    try { instance.exports._start(); } catch (e) { if (!e.exitCode) throw e; }
-    const ms = performance.now() - t1;       // 纯处理耗时（编译另计）
-    wasi.bind(instance.exports.memory);
+    // ① cmd/vad：分段（JSON 输出）
+    const vad = await runSkill("vad", ["vad", "--resample", "16000"], input);
+    if (vad.err) throw new Error(vad.err);
+    const doc = JSON.parse(new TextDecoder().decode(vad.out));
+    segments = doc.segments;
+    const speech = (doc.stats.speech_ms / 1000).toFixed(1);
+    rows.push(["cmd/vad", `检出 <b>${doc.segments.length}</b> 段语音，共 ${speech} s` +
+               `（占比 ${(doc.stats.ratio * 100).toFixed(0)}%）`, vad.ms]);
 
-    const outBuf = wasi.stdout().buffer;
-    const after = parseWav(outBuf);
+    // ② cmd/resample：独立的重采样技能
+    const rs = await runSkill("resample", ["resample", "--rate", "16000"], input);
+    if (rs.err) throw new Error(rs.err);
+    const rsWav = parseWav(rs.out.buffer);
+    rows.push(["cmd/resample", `${(before.rate/1000).toFixed(0)} kHz → <b>${(rsWav.rate/1000).toFixed(0)} kHz</b>，` +
+               `时长不变（${(rsWav.frames/rsWav.rate).toFixed(1)} s）`, rs.ms]);
 
-    document.getElementById("audioBefore").src = blobUrl(input, "audio/wav");
-    document.getElementById("audioAfter").src = blobUrl(outBuf, "audio/wav");
-    document.getElementById("mBefore").textContent =
-      `${(before.rate/1000).toFixed(0)} kHz · ${before.channels} 声道 · ${((sel.fb-sel.fa)/before.rate).toFixed(1)} s`;
-    document.getElementById("mAfter").textContent =
-      `${(after.rate/1000).toFixed(0)} kHz · ${after.channels} 声道 · ${(after.frames/after.rate).toFixed(1)} s`;
-    document.getElementById("mTime").innerHTML =
-      `<span class="big">${ms.toFixed(0)} ms</span>` +
-      (wasCompiled ? "" : `（另有 wasm 编译 ${tCompile.toFixed(0)} ms，仅首次）`);
-    document.getElementById("mRT").innerHTML =
-      `<span class="big">${(((sel.fb-sel.fa)/before.rate)/(ms/1000)).toFixed(0)}×</span> 实时` +
-      `（wasm 在浏览器里，无 JIT 预热）`;
+    // ③ cmd/loudness：测响度 + 给增益建议
+    const loud = await runSkill("loudness", ["loudness", "--target", "-16", "--json"], input);
+    if (loud.err) throw new Error(loud.err);
+    const lb = JSON.parse(new TextDecoder().decode(loud.out));
+    rows.push(["cmd/loudness", `积分响度 <b>${lb.integrated_lufs.toFixed(1)} LUFS</b>，` +
+               `峰 ${lb.sample_peak_dbfs.toFixed(1)} dBFS；到 −16 需 <b>${lb.gain_to_target_db >= 0 ? "+" : ""}${lb.gain_to_target_db.toFixed(1)} dB</b>`, loud.ms]);
+
+    // ④ 三个技能组合成一条链：成品
+    const chain = await runSkill("vad",
+      ["vad", "--speech-only", "--resample", "16000", "--mono", "--normalize", "-16"], input);
+    if (chain.err.includes("失败")) throw new Error(chain.err);
+    const after = parseWav(chain.out.buffer);
+    rows.push(["组合链", `去静音 <b>${dur().toFixed(1)} → ${(after.frames/after.rate).toFixed(1)} s</b>，` +
+               `<b>${(after.rate/1000).toFixed(0)} kHz 单声道</b>，响度归一到 −16 LUFS`, chain.ms]);
+
+    document.getElementById("rows").innerHTML = rows.map(([k, v, ms]) =>
+      `<tr><td class="skill">${k}</td><td>${v}</td><td class="num">${fmtMs(ms)}</td></tr>`).join("");
+    document.getElementById("luNote").innerHTML =
+      `四个任务合计 <b>${(performance.now() - t0).toFixed(0)} ms</b> 处理 ${dur().toFixed(1)} 秒音频 ` +
+      `（${(dur() / ((performance.now() - t0) / 1000)).toFixed(0)}× 实时）。` +
+      `全部在浏览器里跑；模块已在页面加载后预热，这里的耗时反映稳态处理开销，` +
+      `不含浏览器的首次分层编译（那会慢 8 倍左右）。`;
+
+    document.getElementById("audioBefore").src = blobUrl(input);
+    document.getElementById("audioAfter").src = blobUrl(chain.out.buffer);
+    document.getElementById("afterDesc").textContent =
+      `${(after.rate/1000).toFixed(0)} kHz 单声道 · −16 LUFS · 已去静音`;
     document.getElementById("result").classList.remove("hide");
-    const err = wasi.stderr();
-    status.textContent = err.includes("响度") ? err.trim().split("\n").pop() : "";
+    document.getElementById("players").classList.remove("hide");
+    drawWave();
+    status.textContent = "";
   } catch (e) {
     status.textContent = "失败: " + e.message;
   } finally {

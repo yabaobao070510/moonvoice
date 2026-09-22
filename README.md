@@ -135,29 +135,46 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 
 ## 交互演示（单文件，双击即开）
 
-[`demo/index.html`](demo/index.html) —— 在**浏览器里真的运行**本仓库的 MoonBit 技能。
+[`demo/index.html`](demo/index.html) —— 在**浏览器里真的运行**本仓库的三个 MoonBit 技能。
 
-打开后：拖动波形选一段 → 点「用 moonvoice 处理这段」→ 对比听处理前后的音频，
-同时看到处理耗时与实时倍率。
+打开后：拖动波形选一段 → 点「运行三个技能」→ 一次看到三个技能各自做了什么、各花多久，
+并对比听处理前后的音频。
 
-**它没有预先算好任何结果。** 页面内嵌了 `cmd/vad` 的 wasm 编译产物（117 KB）与一个
-最小的 WASI 运行时（[`demo/wasi_shim.js`](demo/wasi_shim.js)，只实现技能实际 import 的
-5 个函数：`args_get` / `args_sizes_get` / `fd_read` / `fd_write` / `proc_exit`——
-可用 wasm 的 import 段核对），点击时真的把音频喂进去执行。
+| 技能 | 页面里展示的结果 |
+|---|---|
+| `cmd/vad` | 检出几段语音、语音占比，并把**段边界标在波形上** |
+| `cmd/resample` | 采样率变化与时长保持 |
+| `cmd/loudness` | 积分响度（LUFS）、峰值、到目标响度所需增益 |
+| 三者组合 | 去静音 + 单声道 + 响度归一的成品音频（可直接听） |
 
-实测（Chrome，35.5 s 素材）：**48 kHz 立体声 → 16 kHz 单声道**、去掉静音段
-**35.5 s → 30.2 s**、响度 **−26.6 → −16 LUFS**，纯处理耗时 **2.2 s（16× 实时）**。
+**没有预先算好任何结果。** 页面内嵌三个技能的 wasm 产物（共 286 KB）与一个最小的
+WASI 运行时（[`demo/wasi_shim.js`](demo/wasi_shim.js)，只实现技能实际 import 的 5 个函数：
+`args_get` / `args_sizes_get` / `fd_read` / `fd_write` / `proc_exit`——可从 wasm 的 import 段核对），
+点击时真的把音频喂进去执行。
+
+实测（Chrome，选中 35.5 s 素材；模块在页面加载后已预热）：
+
+| 任务 | 耗时 |
+|---|---|
+| `cmd/vad`（分段） | 248 ms |
+| `cmd/resample`（48k→16k） | 233 ms |
+| `cmd/loudness`（E128 响度） | 79 ms |
+| 组合链（去静音+单声道+归一 → 35.5 s 变 30.2 s） | 389 ms |
+| **合计** | **950 ms（37× 实时）** |
+
+> 预热是必要的：浏览器 wasm 引擎分层编译，模块**首次执行**慢约 8 倍
+> （实测首次 1.7 s、热后 0.2 s）。不预热的话，报出的是启动开销而不是处理开销。
 
 素材：LibriSpeech（OpenSLR SLR31，**CC BY 4.0**）真人朗读，按未剪辑录音的形态组织
-（句间保留不均匀停顿）—— 语音内容完全真实。处理链本身 100% 由 moonvoice 组件完成。
+（句间保留不均匀停顿）。语音内容完全真实，处理链 100% 由 moonvoice 组件完成。
 
 重新生成：
 ```bash
-python demo/build_before.py <LibriSpeech flac 目录>   # 造输入素材
+python demo/build_before.py <LibriSpeech flac 目录>          # 造输入素材
 ffmpeg -i demo/before.wav -c:a libmp3lame -b:a 128k demo/before.mp3
-moon build --release --target wasm cmd/vad
-python demo/build_page.py                            # 产出单文件 index.html
-python demo/_verify.py                               # 无头浏览器验证（真的跑一遍）
+for s in vad resample loudness; do moon build --release --target wasm cmd/$s; done
+python demo/build_page.py                                   # 产出单文件 index.html
+python demo/_verify.py                                      # 无头浏览器验证（真的跑一遍）
 ```
 
 ## 原语与组合

@@ -20,6 +20,11 @@ PAGE = pathlib.Path(__file__).resolve().parent / "index.html"
 
 
 def main() -> None:
+    # Windows 控制台默认 GBK，打不出页面里的 −（U+2212）等字符
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     with sync_playwright() as pw:
         b = pw.chromium.launch()
         pg = b.new_page(viewport={"width": 1000, "height": 1100})
@@ -28,7 +33,8 @@ def main() -> None:
         pg.on("console", lambda m: errs.append(f"console.{m.type}: {m.text}") if m.type == "error" else None)
 
         pg.goto(PAGE.as_uri(), wait_until="load")
-        pg.wait_for_timeout(2000)   # 等 MP3 解码
+        # 等 MP3 解码 + 后台预热完成（预热会让后续计时反映真实处理开销而非首次启动开销）
+        pg.wait_for_timeout(12000)
 
         # 2) 拖拽选区（在波形画布上从左 20% 拖到 70%）
         box = pg.locator("#wave").bounding_box()
@@ -59,10 +65,9 @@ def main() -> None:
         pg.wait_for_timeout(500)
 
         got = pg.evaluate("""() => ({
-          before: document.getElementById('mBefore').textContent,
-          after:  document.getElementById('mAfter').textContent,
-          time:   document.getElementById('mTime').textContent,
-          rt:     document.getElementById('mRT').textContent,
+          rows: [...document.querySelectorAll('#rows tr')].map(
+            tr => [...tr.children].map(td => td.textContent.trim()).join(' | ')),
+          note: document.getElementById('luNote').textContent,
           beforeReady: !!document.getElementById('audioBefore').src.startsWith('blob:'),
           afterReady:  !!document.getElementById('audioAfter').src.startsWith('blob:'),
           status: document.getElementById('status').textContent
@@ -72,10 +77,10 @@ def main() -> None:
 
     print("选区 :", sel_text)
     print("按钮可点:", not btn_disabled)
-    print("原始 :", got["before"])
-    print("结果 :", got["after"])
-    print("耗时 :", got["time"])
-    print("倍率 :", got["rt"])
+    print("技能结果：")
+    for r in got["rows"]:
+        print("   ", r)
+    print("汇总:", got["note"])
     print("音频可播放:", got["beforeReady"], got["afterReady"])
     print("stderr:", got["status"])
     print("JS 错误:", errs[:3] if errs else "无")

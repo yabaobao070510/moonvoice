@@ -23,7 +23,9 @@ import sys
 
 DEMO = pathlib.Path(__file__).resolve().parent
 ROOT = DEMO.parent
-WASM = ROOT / "_build" / "wasm" / "release" / "build" / "cmd" / "vad" / "vad.wasm"
+WASM_DIR = ROOT / "_build" / "wasm" / "release" / "build" / "cmd"
+# 三个技能各一个 wasm：页面把它们都跑一遍（全功能展示，不是只跑一个）
+SKILLS = ["vad", "resample", "loudness"]
 MP3 = DEMO / "before.mp3"
 SHIM = DEMO / "wasi_shim.js"
 TPL = DEMO / "page_template.html"
@@ -31,9 +33,8 @@ OUT = DEMO / "index.html"
 
 
 def main() -> None:
-    for p, how in [(WASM, "moon build --release --target wasm cmd/vad"),
-                   (MP3, "python demo/build_before.py <flac 目录> 然后 ffmpeg 转 mp3"),
-                   (SHIM, "（仓库自带）")]:
+    for p, how in [(MP3, "python demo/build_before.py <flac 目录> 然后 ffmpeg 转 mp3"),
+                   (SHIM, "（仓库自带）")] +                   [(WASM_DIR / k / f"{k}.wasm", f"moon build --release --target wasm cmd/{k}") for k in SKILLS]:
         if not p.exists():
             sys.exit(f"缺少 {p.relative_to(ROOT)}　→ 先执行：{how}")
 
@@ -45,12 +46,14 @@ def main() -> None:
 
     html = TPL.read_text(encoding="utf-8")
     html = html.replace("__BEFORE_MP3__", b64(MP3))
-    html = html.replace("__VAD_WASM__", b64(WASM))
+    for k in SKILLS:
+        html = html.replace(f"__WASM_{k.upper()}__", b64(WASM_DIR / k / f"{k}.wasm"))
     html = html.replace("__SHIM__", shim_src)
     OUT.write_text(html, encoding="utf-8")
 
     print(f"生成 {OUT.relative_to(ROOT)}")
-    print(f"  wasm   {WASM.stat().st_size/1024:.0f} KB")
+    total = sum((WASM_DIR / k / f"{k}.wasm").stat().st_size for k in SKILLS)
+    print(f"  wasm   {total/1024:.0f} KB（{'+'.join(SKILLS)}）")
     print(f"  素材   {MP3.stat().st_size/1024:.0f} KB (mp3)")
     print(f"  页面   {OUT.stat().st_size/1024:.0f} KB（单文件，双击可开）")
 
