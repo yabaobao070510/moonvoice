@@ -22,6 +22,8 @@
   /* ── 页头 ── */
   header { display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap; }
   h1 { font-size:20px; font-weight:650; margin:0; letter-spacing:.01em; }
+  header a { color:var(--muted); text-decoration:none; font-size:14px; }
+  header a:hover { color:var(--accent); }
   .lead { margin:8px 0 0; color:var(--muted); }
   .lead b { color:var(--ink); font-weight:600; }
 
@@ -109,7 +111,7 @@
 
   <header>
     <h1>moonvoice</h1>
-    <!-- 仓库公开后，在此放回仓库链接：<a href="<仓库地址>">GitHub ↗</a> -->
+    <a href="https://github.com/yabaobao070510/moonvoice" id="repoLink">GitHub ↗</a>
   </header>
   <p class="lead">
     把录音切成<b>可识别的语音段</b>——纯 MoonBit，零依赖，<b>不做语音增强</b>。
