@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>moonvoice 对照演示 — mel 质量与 VAD</title>
+<style>
+  :root { --bg:#0f1117; --panel:#171a23; --line:#2a2f3a; --fg:#e6e9ef; --dim:#8b93a7;
+          --accent:#4ade80; --accent2:#60a5fa; --warn:#f87171; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px 60px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:28px 0 10px; color:var(--fg); }
+  h2 .note { font-weight:400; color:var(--dim); font-size:13px; margin-left:8px; }
+  p.lead { color:var(--dim); margin:0 0 18px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+           padding:14px 16px; margin-bottom:14px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; }
+  .col { flex:1 1 300px; min-width:260px; }
+  .cap { font-size:12px; color:var(--dim); margin:6px 0 4px; }
+  .cap b { color:var(--fg); font-weight:600; }
+  .cap.num { font-family:ui-monospace,Consolas,monospace; color:var(--dim); }
+  canvas { display:block; width:100%; background:#0b0d12; border-radius:6px; cursor:crosshair; }
+  audio { width:100%; margin-top:6px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th,td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:500; }
+  td.num { font-family:ui-monospace,Consolas,monospace; text-align:right; }
+  .ok { color:var(--accent); } .bad { color:var(--warn); }
+  .legend { display:flex; gap:16px; font-size:12px; color:var(--dim); margin-top:8px; flex-wrap:wrap; }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  .verdict { border-left:3px solid var(--accent); padding:10px 14px; background:#141a17;
+             border-radius:0 8px 8px 0; margin:14px 0; }
+  .verdict.warn { border-color:var(--warn); background:#1a1414; }
+  code { background:#0b0d12; padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>moonvoice 对照演示</h1>
+  <p class="lead">
+    纯 MoonBit 实现在浏览器里看到的一切，都由 <code>tools/dump</code>（wasm 后端）算出，
+    与 Python 参照实现（librosa / scipy）逐点比对。
+    <b>带对照组</b>：只看"我们和 librosa 一样"没有意义，同时给出"做错了会差多少"才有。
+  </p>
+
+  <div class="panel">
+    <audio id="player" controls preload="auto" src="__AUDIO_SRC__"></audio>
+    <div class="legend">
+      <span><span class="sw" style="background:#4ade80"></span>VAD 检出段</span>
+      <span><span class="sw" style="background:#60a5fa"></span>构造真值</span>
+      <span>点击任意图可跳转到该时间</span>
+    </div>
+  </div>
+
+  <h2>波形与语音段<span class="note">绿=检出，蓝线=构造真值（写死的真相）</span></h2>
+  <div class="panel"><canvas id="wave" height="150"></canvas></div>
+
+  <h2>线性幅度谱<span class="note">moonvoice 实现，n_fft=512 / hop=256</span></h2>
+  <div class="panel"><canvas id="spec" height="200"></canvas></div>
+
+  <h2>mel 谱对照<span class="note">同一段音频、同一组参数，三种实现并排</span></h2>
+  <div class="panel">
+    <div class="row">
+      <div class="col"><div class="cap"><b>A. moonvoice</b>（Slaney 标度 + 面积归一化）</div>
+        <canvas class="mel" id="melA" height="200"></canvas></div>
+      <div class="col"><div class="cap"><b>B. librosa</b>（参照实现）</div>
+        <canvas class="mel" id="melB" height="200"></canvas></div>
+      <div class="col"><div class="cap"><b>|A − B|</b> 差值</div>
+        <canvas class="mel" id="melAB" height="200"></canvas>
+        <div class="cap num" id="diffAB"></div></div>
+    </div>
+  </div>
+
+  <h2>对照组：把实现写错会差多少<span class="note">同样的音频、同样的色标</span></h2>
+  <div class="panel">
+    <div class="row">
+      <div class="col"><div class="cap"><b>C1. HTK 标度</b>（该用 Slaney 却用了 HTK）</div>
+        <canvas class="mel" id="melC1" height="200"></canvas></div>
+      <div class="col"><div class="cap"><b>C2. 不做面积归一化</b>（最常见的错法）</div>
+        <canvas class="mel" id="melC2" height="200"></canvas></div>
+      <div class="col"><div class="cap"><b>|C2 − B|</b> 差值（同一色标）</div>
+        <canvas class="mel" id="melC2D" height="200"></canvas>
+        <div class="cap num" id="diffC2"></div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <table id="stats">
+      <thead><tr><th>对比</th><th>最大绝对偏差</th><th>平均绝对偏差</th><th>含义</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="legend">
+      <span>差值图色标：<span style="background:#0b0d12;padding:1px 8px;border:1px solid var(--line)">1e-8 dB</span>
+        → <span style="background:#7a1c1c;padding:1px 8px">1e-3</span>
+        → <span style="background:#f87171;padding:1px 8px;color:#000">1e+1 dB</span>（对数刻度，三张图共用）</span>
+    </div>
+  </div>
+
+  <h2>怎么读这张表</h2>
+  <div class="panel">
+    <div class="verdict" id="verdict-ok"></div>
+    <div class="verdict warn" id="verdict-bad"></div>
+    <p style="color:var(--dim);margin:14px 0 0">
+      同一条链路里还有更多对拍：STFT 完全重构（5 种窗 SNR ≥ 100 dB）、重采样 vs scipy
+      （对 9 kHz 折回抑制 87.8 dB）、响度 vs pyloudnorm（&lt; 0.1 LU）、WAV 解码 vs libsndfile（逐样本相等）。
+      见仓库 <code>README.md</code> 与 <code>docs/retrospective.md</code>。
+    </p>
+  </div>
+</div>
+
+<script>
+const DATA = __DATA__;
+
+const cv = id => document.getElementById(id);
+const player = cv('player');
+const meta = DATA.meta, F = meta.frames, M = meta.n_mels;
+
+function fit(canvas) {                       // 按设备像素比放大，避免糊
+  const r = canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  canvas.width = Math.round(r.width * d);
+  canvas.height = Math.round(canvas.height * d);
+  const g = canvas.getContext('2d');
+  g.setTransform(d, 0, 0, d, 0, 0);
+  g.clearRect(0, 0, r.width, canvas.height / d);
+  return { g, w: r.width, h: canvas.height / d };
+}
+
+// 谱图色标：把 dB 映射到颜色（近似 magma）
+function specColor(v, lo, hi) {
+  let t = (v - lo) / (hi - lo);
+  t = Math.max(0, Math.min(1, t));
+  const r = Math.round(255 * Math.min(1, t * 1.6));
+  const gg = Math.round(255 * Math.max(0, t * 1.6 - 0.6) * 1.2);
+  const b = Math.round(255 * Math.max(0, 0.35 - Math.abs(t - 0.35)) * 2.2 + 30 * t);
+  return `rgb(${r},${gg},${b})`;
+}
+
+// 差值色标：**对数刻度**，三张差值图共用，所以"看不见"和"一片红"是可比的
+const DIFF_LO = -8, DIFF_HI = 1.5;          // 1e-8 dB .. ~30 dB
+function diffColor(d) {
+  if (d <= 0) return '#0b0d12';
+  const t = (Math.log10(d) - DIFF_LO) / (DIFF_HI - DIFF_LO);
+  const c = Math.max(0, Math.min(1, t));
+  return `rgb(${Math.round(40 + 215 * c)},${Math.round(20 + 40 * c)},${Math.round(30 + 30 * c)})`;
+}
+
+function drawMatrix(id, flat, lo, hi, colorFn) {
+  const { g, w, h } = fit(cv(id));
+  const cw = w / F, ch = h / M;
+  for (let f = 0; f < F; f++) {
+    for (let m = 0; m < M; m++) {
+      g.fillStyle = colorFn(flat[f * M + m], lo, hi);
+      g.fillRect(f * cw, h - (m + 1) * ch, cw + 1, ch + 1);   // mel 低在下
+    }
+  }
+}
+
+function drawDiff(id, flat, other) {
+  const { g, w, h } = fit(cv(id));
+  const cw = w / F, ch = h / M;
+  for (let f = 0; f < F; f++) {
+    for (let m = 0; m < M; m++) {
+      const i = f * M + m;
+      g.fillStyle = diffColor(Math.abs(flat[i] - other[i]));
+      g.fillRect(f * cw, h - (m + 1) * ch, cw + 1, ch + 1);
+    }
+  }
+}
+
+function drawWave() {
+  const { g, w, h } = fit(cv('wave'));
+  const wave = DATA.waveform, dur = meta.duration_ms;
+  const mid = h / 2;
+  // VAD 检出段（绿）
+  for (const s of meta.segments) {
+    const x0 = s.start_ms / dur * w, x1 = s.end_ms / dur * w;
+    g.fillStyle = 'rgba(74,222,128,0.18)';
+    g.fillRect(x0, 0, x1 - x0, h);
+    g.strokeStyle = '#4ade80'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0, h); g.moveTo(x1, 0); g.lineTo(x1, h); g.stroke();
+  }
+  // 构造真值（蓝虚线）
+  const TRUTH = DATA.truth_ms;
+  g.setLineDash([5, 4]); g.strokeStyle = '#60a5fa';
+  for (const s of TRUTH) {
+    const x0 = s.start_ms / dur * w, x1 = s.end_ms / dur * w;
+    g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0, h); g.moveTo(x1, 0); g.lineTo(x1, h); g.stroke();
+  }
+  g.setLineDash([]);
+  // 波形
+  g.strokeStyle = '#9aa4b8'; g.lineWidth = 1; g.beginPath();
+  for (let i = 0; i < wave.length; i++) {
+    const x = i / wave.length * w;
+    const y = mid - wave[i] * mid * 0.92;
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.stroke();
+}
+
+function drawSpec() {
+  const { g, w, h } = fit(cv('spec'));
+  const bins = meta.bins ?? (DATA.spectrogram_db.length / F);
+  const flat = DATA.spectrogram_db;
+  let lo = 1e9, hi = -1e9;
+  for (const v of flat) { if (v > -60) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+  const cw = w / F, ch = h / bins;
+  for (let f = 0; f < F; f++) {
+    for (let b = 0; b < bins; b++) {
+      g.fillStyle = specColor(flat[f * bins + b], lo, hi);
+      g.fillRect(f * cw, h - (b + 1) * ch, cw + 1, ch + 1);
+    }
+  }
+}
+
+// 播放头：画在所有图上的竖线
+function drawPlayhead() {
+  if (!player.duration) return;
+  const t = player.currentTime / player.duration;
+  for (const id of ['wave', 'spec', 'melA', 'melB', 'melAB', 'melC1', 'melC2', 'melC2D']) {
+    const c = cv(id); if (!c) continue;
+    const g = c.getContext('2d'), d = window.devicePixelRatio || 1;
+    const w = c.width / d, h = c.height / d;
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(t * w, 0); g.lineTo(t * w, h); g.stroke();
+  }
+}
+
+function seekFrom(ev, canvas) {
+  const r = canvas.getBoundingClientRect();
+  const t = (ev.clientX - r.left) / r.width;
+  if (player.duration) player.currentTime = t * player.duration;
+}
+
+function render() {
+  drawWave(); drawSpec();
+  drawMatrix('melA', DATA.mel.ours, -60, 20, specColor);
+  drawMatrix('melB', DATA.mel.ref, -60, 20, specColor);
+  drawDiff('melAB', DATA.mel.ours, DATA.mel.ref);
+  drawMatrix('melC1', DATA.mel.htk, -60, 20, specColor);
+  drawMatrix('melC2', DATA.mel.nonorm, -60, 20, specColor);
+  drawDiff('melC2D', DATA.mel.nonorm, DATA.mel.ref);
+  drawPlayhead();
+  renderStats();
+  // 差值图必须带数字：颜色单独看会被误读（A−B 不是纯黑，因为差异确实是 1e-7 而非 0）
+  const s = DATA.stats;
+  cv('diffAB').innerHTML = `最大 <b>${fmt(s.ours_vs_ref.max_abs_db)}</b> · 平均 <b>${fmt(s.ours_vs_ref.mean_abs_db)}</b>`;
+  cv('diffC2').innerHTML = `最大 <b>${fmt(s.nonorm_vs_ref.max_abs_db)}</b> · 平均 <b>${fmt(s.nonorm_vs_ref.mean_abs_db)}</b>`;
+}
+
+function fmt(x) {
+  if (x === 0) return '0';
+  if (x < 1e-4) return x.toExponential(2) + ' dB';
+  return x.toFixed(2) + ' dB';
+}
+
+function renderStats() {
+  const s = DATA.stats;
+  const rows = [
+    ['A 我们 vs B librosa', s.ours_vs_ref, 'ok',
+     '与参照实现一致（差异在 f32 样本精度的地板）'],
+    ['C1 HTK 标度 vs B', s.htk_vs_ref, 'bad',
+     '用错 mel 标度 → 中低频段系统性偏移'],
+    ['C2 无面积归一化 vs B', s.nonorm_vs_ref, 'bad',
+     '不做 Slaney 归一化 → 高频带整体偏低（最常见错法）'],
+  ];
+  document.querySelector('#stats tbody').innerHTML = rows.map(([n, v, cls, why]) =>
+    `<tr><td>${n}</td><td class="num ${cls}">${fmt(v.max_abs_db)}</td>` +
+    `<td class="num ${cls}">${fmt(v.mean_abs_db)}</td><td style="color:var(--dim)">${why}</td></tr>`
+  ).join('');
+
+  const a = s.ours_vs_ref.mean_abs_db, c = s.nonorm_vs_ref.mean_abs_db;
+  cv('verdict-ok').innerHTML =
+    `<b>结论</b>：moonvoice 的 mel 前端与 librosa 的平均偏差 <b>${fmt(a)}</b>，` +
+    `差异量级等于 f32 样本本身能表示的精度——不是"接近"，是<b>到了浮点地板</b>。`;
+  cv('verdict-bad').innerHTML =
+    `<b>对照组的含义</b>：同样是"输出一张 mel 谱"，少做一步面积归一化，` +
+    `平均偏差就有 <b>${fmt(c)}</b>（差 ${Math.round(c / Math.max(a, 1e-12))} 个数量级）。` +
+    `所以"和参照一致到 1e-7"才是个有内容的结论——它排除了整类实现错误，而不是自说自话。`;
+}
+
+player.addEventListener('timeupdate', drawPlayhead);
+player.addEventListener('seeked', drawPlayhead);
+for (const id of ['wave', 'spec', 'melA', 'melB', 'melAB', 'melC1', 'melC2', 'melC2D']) {
+  cv(id).addEventListener('click', e => seekFrom(e, cv(id)));
+}
+window.addEventListener('resize', render);
+render();
+</script>
+</body>
+</html>

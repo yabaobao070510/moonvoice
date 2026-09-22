@@ -121,6 +121,7 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 | MFCC | librosa.feature.mfcc | 最大偏差 < 0.5 |
 | DCT-II | scipy.fftpack | \|Δ\| < 1e-12 |
 | 积分响度 | **pyloudnorm** | < 0.1 LU |
+| 门控行为 | 不变量性质 | 静音加长不改变读数；电平翻倍 = +6.02 LU |
 | 双二阶 -3dB 点/增益 | 滤波器定义 | < 0.01 dB |
 
 ### VAD
@@ -131,6 +132,22 @@ moon run --target wasm cmd/vad -- --indent 2 < input.wav
 | SNR 5 dB | 召回 100%、精确率 ≥ 80% |
 | 白噪声突发 | 融合 79.7% > 纯能量 74.4% > 纯谱 40.6% |
 | 持续语音 | 合并为单段，覆盖率 ≥ 85% |
+
+## 对照演示（可直接打开）
+
+[`demo/index.html`](demo/index.html) —— **单文件页面，双击即开，无需起服务器**。
+内嵌了音频与全部数据，可以边听边看：
+
+- **波形 + 语音段**：绿色是 VAD 检出，蓝色虚线是构造真值；点任意图可跳转到该时刻
+- **线性幅度谱**与**mel 谱**：由 `tools/dump`（wasm 后端）算出
+- **对照组**（这是重点）：同一色标下并排给出
+  - `|A−B|`：我们 vs librosa 的差值 → **平均 6.7e-8 dB**（f32 样本精度的地板）
+  - `|C2−B|`：**少做一步面积归一化**的差值 → **平均 21.74 dB**
+
+  两者相差 9 个数量级。所以"和参照一致"才是个有内容的结论——
+  它排除了整类实现错误，而不是自说自话。
+
+重新生成：`python demo/gen_demo.py`（需要 moon 工具链 + librosa）。
 
 ## 原语与组合
 
@@ -222,15 +239,14 @@ moon test                                  # 四后端均可跑同一套金标
   有调性的声音天然不像噪声。需要区分音乐与语音请在上层另做处理。
 - 重采样会把 RIFF 保留块原样带过去，其中**含字节偏移的块（如 `cue `）偏移已失效**。
 - 抖动用固定种子（可复现优先），不是密码学随机；对听感有要求的场景这是标准做法。
-- 未实现：FLAC/OGG 解码、响度（EBU R128）、mel 特征。见 `PROJECT_STATE.md`。
+- 未实现：裸 PCM I/O、分块流式处理（大于内存的音频）、FLAC/OGG 解码、真峰值（dBTP）测量。
 
 ## 开发状态
 
 见 [`PROJECT_STATE.md`](PROJECT_STATE.md)（进度、决策记录、实测事实与坑）、
 [`docs/retrospective.md`](docs/retrospective.md)（**开发复盘**：架构决策、AI 工具的作用与出错记录）、
 [`docs/known-issues.md`](docs/known-issues.md)（上游编译器缺陷与绕行）、
-[`docs/one-pager.md`](docs/one-pager.md)（一页项目说明）、
-[`proposals/moonbit-hackathon-2026.md`](proposals/moonbit-hackathon-2026.md)（立项方案）。
+[`docs/one-pager.md`](docs/one-pager.md)（一页项目说明）。
 
 ## 许可
 

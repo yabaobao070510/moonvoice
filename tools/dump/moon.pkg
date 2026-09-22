@@ -1,0 +1,9 @@
+import {
+  "moonbit-community/miniio",
+  "yabaobao/moonvoice/audio",
+  "yabaobao/moonvoice/feature",
+  "yabaobao/moonvoice/vad",
+}
+
+supported_targets = "wasm"
+pkgtype(kind: "executable")

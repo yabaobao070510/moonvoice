@@ -4,3 +4,6 @@ target/
 target
 .mooncakes/
 .moonagent/
+# 演示页的中间产物（由 demo/gen_demo.py 重新生成；index.html 是产物但入库，见 README）
+demo/data.json
+demo/audio.wav

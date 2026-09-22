@@ -4,16 +4,13 @@
 
 ## 当前状态
 
-- **阶段**：D1–D5 完成（五个库包 + 两个技能 + SKILL.md + README 全部就位）
-- **赛期**：2026 MoonBit 黑客松 · 九月赛，**2026-09-30 24:00 截止报名与验收**
-- **测试**：**54 项 × 四后端（wasm / wasm-gc / js / native）全绿**；`moon check` 0 警告
+- **阶段**：**交付就绪**（五个库包 + 三个技能 + SKILL.md + README + 开发复盘）
+- **交付截止**：2026-09-30
+- **测试**：**89 项 × 四后端（wasm / wasm-gc / js / native）全绿**；`moon check --deny-warn` 零警告
 - **发布链路**：`moon package` 已验证通过（产物 `_build/publish/yabaobao-moonvoice-0.1.0.zip`），
   只差 `moon register` 账号即可 `moon publish`
-- **剩余**：发布 mooncakes（需账号）+ 浏览器 demo（可选）+ 真实数据回归 + 开发复盘
-- **阻塞项**（需用户本人）：
-  1. `moon register` / `moon login`（发布技能必须）
-  2. GitHub 公开仓库（报名要填 GitHub ID）
-  3. 提交飞书报名表 + 加赛事微信群
+- **剩余**：发布 mooncakes（需账号）；基础库扩展（流式/PCM/FLAC）留待下月
+- **阻塞项**（需用户本人）：GitHub 公开仓库；mooncakes 账号；报名流程
 
 ## 已完成（按倒排）
 
@@ -25,6 +22,8 @@
 | D3 | `feature`：FFT + 功率谱/谱平坦度/谱熵 | 47 项测试（含 numpy 金标） |
 | D4 | `vad` + `segments`：三引擎 VAD + 段模型 | 合成基准四类场景 |
 | D5 | `cmd/vad`、`cmd/resample` 技能 + SKILL.md + README | 端到端实测 + libsndfile 复核 |
+| D5+ | `feature` 扩展：窗函数/STFT/mel/MFCC/双二阶/EBU R128 响度 | 对拍 librosa / pyloudnorm |
+| D5+ | `cmd/loudness` 第三个技能 + 开发复盘 + 一页说明 | 89 项测试四后端全绿 |
 
 ### VAD 关键实测（详见 vad/vad.mbt 注释）
 
@@ -52,15 +51,6 @@
 
 **Int32 陷阱**：Int 是 32 位有符号，`h*31+v` 这类累乘会溢出回绕（不是报错）。哈希/累加类代码要显式取模收窄。
 
-## 赛事口径（速查，来源：官方赛事页）
-
-- 验收六条：MoonBit 为主语言 / 公开仓库持续提交 / README+可运行示例+必要测试 / 已有项目须本期实质新增 / 开源合规并披露移植来源 / AI 可解释（开发复盘）
-- 方向：工具库、数据处理、AI 应用、开发者工具
-- 奖励：月度 150+350 元；季度一等奖 12,000（1–2 名）、二等 6,000（3–4）、三等 3,000（5）；季度池 80,000；半年度一等 24,000；年度一等 36,000；单人最高约 7.5 万；晋级季度决赛可免笔试进 MVP 计划（2k–5k/月）
-- 硬性流程：报名需提交参赛信息 + 公开仓库 + 一页项目说明；**必须加入赛事交流群**（否则影响奖金）
-- 报名入口：飞书表单 `https://bxup9uklfcb.feishu.cn/share/base/form/shrcnWUMlgpbwHaXgzV7HmNhNhg`
-- 赛事章程：`https://bxup9uklfcb.feishu.cn/wiki/Dx4Bwd6D1i3GfHkajQCcF7SznEd`
-
 ## 关键事实（2026-09-21 实测，改动需重测）
 
 - mooncakes.io：2,552 模块 / 23,369 包 / 3,454 万行 / 729 万下载
@@ -81,21 +71,8 @@
 | 2026-09-21 | 不碰红海方向 | registry 实测同质竞争严重，避免"移植型"浅项目 |
 | 2026-09-21 | 不写代码前先验证 wasm stdin / runwasm / publish | R1/R2 是叙事前提，D0 必须先打掉 |
 
-## 9 天冲刺清单
-
-- [ ] D0 装工具链 → `moon new` → 最小 wasm skill 跑通 `moon runwasm` → 试 `moon publish`
-- [ ] D0 建公开 GitHub 仓库 + 报名 + 加赛事群
-- [ ] D1 `audio` 包：WAV 读写 + 单测 + golden 脚本骨架
-- [ ] D2 `resample`：多相 sinc，对拍 scipy SNR ≥ 60 dB
-- [ ] D3 `vad` E1+E2
-- [ ] D4 E3 + 三引擎融合，对拍 webrtcvad ≥ 90%
-- [ ] D5 `cmd/vad`、`cmd/resample` + SKILL.md + 发布 + 云端验证
-- [ ] D6 真实数据回归 + 基准 + README + `moon doc`
-- [ ] D7 浏览器 demo（或终端 GIF）
-- [ ] D8 开发复盘 + 申报材料 → **冻结**
-- [ ] D9 验收提交（上午）
-
 ## 契约（冻结前可改）
 
 - 输出 JSON：`{"version":1,"source":{...},"params":{...},"segments":[{"start_ms","end_ms","rms_dbfs","confidence"}],"stats":{...}}`
-- 技能调用：`moon runwasm <user>/moonvoice/cmd/vad -- <opts> < in.wav > segments.json`
+- 技能调用（registry 包）：`moonx <user>/moonvoice/cmd/vad -- <opts> < in.wav > segments.json`
+- 技能调用（本地开发）：`moon run --target wasm cmd/vad -- <opts> < in.wav`
