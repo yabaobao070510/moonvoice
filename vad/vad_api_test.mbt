@@ -174,3 +174,78 @@ test "API: 音频原语（切片/拼接/增益/归一化/混音）独立可用" 
   }
   assert_true(raised)
 }
+
+///| 用法六（回归）：rms_dbfs 必须在**最终边界**上实测——合并链路不能让它变成"最轻碎片"的值。
+/// 2026-09-22 修复：旧实现里 merge_close 的保守取最小会外泄到输出字段
+/// （实测案例：AMI 会议素材段内真实 RMS -46.6 dBFS、字段却报 -85.9——某个门控静音碎片的电平）。
+test "API: 段 rms 在最终边界上实测（不被合并的最轻碎片污染）" {
+  let rate = 16000
+  let n = rate * 2
+  let samples : FixedArray[Float] = FixedArray::make(n, 0.0)
+  let mut seed = 7
+  let voiced = fn(i : Int, amp : Double) {
+    let t = i.to_double() / rate.to_double()
+    let mut v = 0.0
+    for k = 1; k <= 8; k = k + 1 {
+      v = v + @math.sin(2.0 * @math.PI * 120.0 * k.to_double() * t) / k.to_double()
+    }
+    v * amp
+  }
+  for i = 0; i < n; i = i + 1 {
+    seed = (seed * 25173 + 13849) % 65536
+    let noise = 0.002 * (seed.to_double() / 32768.0 - 1.0)
+    let ms = i * 1000 / rate
+    // 0-800ms 响段；800-950ms 低噪间隙（< min_silence 250ms → 会被合并）；
+    // 950-1750ms 轻段（仍判语音，但比响段低约 22 dB）；其后静音
+    let v = if ms < 800 {
+      voiced(i, 0.25)
+    } else if ms < 950 {
+      0.0
+    } else if ms < 1750 {
+      voiced(i, 0.02)
+    } else {
+      0.0
+    }
+    samples[i] = Float::from_double(v + noise)
+  }
+  let audio = @audio.Audio::new(rate, 1, samples)
+  let segs = @vad.detect_segments(audio, @vad.VadParams::default(), @vad.VadEngine::Fused)
+  if segs.length() == 0 {
+    fail("应检出语音段")
+  }
+  // 通用不变式：每个段的 rms 都应等于其最终 [start,end) 区间上的直接实测值
+  for s in segs {
+    let from = s.start_ms() * rate / 1000
+    let to = if s.end_ms() * rate / 1000 < n { s.end_ms() * rate / 1000 } else { n }
+    let mut acc = 0.0
+    for i = from; i < to; i = i + 1 {
+      acc = acc + samples[i].to_double() * samples[i].to_double()
+    }
+    let cnt = (to - from).to_double()
+    let expected = if cnt > 0.0 && acc > 0.0 { 10.0 * @math.log10(acc / cnt) } else { -160.0 }
+    if (s.rms_dbfs() - expected).abs() > 0.05 {
+      fail(
+        "段 [" + s.start_ms().to_string() + "," + s.end_ms().to_string() +
+        ") 的 rms 应为实测 " + expected.to_string() + "，实际 " + s.rms_dbfs().to_string(),
+      )
+    }
+  }
+  // 定向回归：若响段与轻段被合并成一段，该段不能上报"轻段/碎片"的电平
+  for s in segs {
+    if s.start_ms() <= 400 && s.end_ms() >= 1400 {
+      let qf = 950 * rate / 1000
+      let qt = 1750 * rate / 1000
+      let mut acc = 0.0
+      for i = qf; i < qt; i = i + 1 {
+        acc = acc + samples[i].to_double() * samples[i].to_double()
+      }
+      let quiet_rms = 10.0 * @math.log10(acc / (qt - qf).to_double())
+      if s.rms_dbfs() - quiet_rms < 6.0 {
+        fail(
+          "合并段的 rms 疑似取了最轻碎片（旧版 bug 回归）：段报 " +
+          s.rms_dbfs().to_string() + "，轻段实测 " + quiet_rms.to_string(),
+        )
+      }
+    }
+  }
+}

@@ -45,7 +45,7 @@ pub fn Segment::duration_ms(self : Segment) -> Int {
   self.end_ms - self.start_ms
 }
 
-///| 段内 RMS（dBFS，越接近 0 越响）
+///| 段内实际 RMS（dBFS，越接近 0 越响）——按最终段边界实测，合并阶段产生的保守值不对外
 pub fn Segment::rms_dbfs(self : Segment) -> Double {
   self.rms_dbfs
 }
@@ -184,6 +184,8 @@ pub fn SegmentsResult::to_json_string(self : SegmentsResult) -> String {
 
 ///|
 /// 合并间隔小于 `min_gap_ms` 的相邻段（同一句话里的换气不该被切成两段）。
+/// 合并时保留的 rms 是**阶段内**的保守值（取更小），只服务合并决策；
+/// 输出字段的语义由 vad 侧在最终边界上重算（见 frames_to_segments）。
 pub fn merge_close(segs : Array[Segment], min_gap_ms : Int) -> Array[Segment] {
   let out : Array[Segment] = []
   for s in segs {

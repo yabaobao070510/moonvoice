@@ -488,7 +488,30 @@ pub fn frames_to_segments(
   let merged = @segments.merge_close(raw, params.min_silence_ms)
   let kept = @segments.drop_short(merged, params.min_speech_ms)
   let padded = @segments.pad_segments(kept, params.pad_ms, total_ms)
-  @segments.resolve_overlaps(padded)
+  let resolved = @segments.resolve_overlaps(padded)
+  // rms_dbfs 的契约是"最终段内实际 RMS"：合并/补边只调整边界，而 merge_close 的
+  // 保守取最小会让字段只剩某个碎片的值——这里按最终边界对样本重算一次（2026-09-22 修复）。
+  resolved.map(fn(seg) {
+    @segments.Segment::new(
+      seg.start_ms(),
+      seg.end_ms(),
+      segment_rms_db(mono, sample_rate, seg.start_ms(), seg.end_ms()),
+      seg.confidence(),
+    )
+  })
+}
+
+///| 按毫秒边界对样本直接重算段 RMS（与 frame_rms_db 同定义：满刻度 1.0）。
+fn segment_rms_db(
+  mono : FixedArray[Float],
+  sample_rate : Int,
+  start_ms : Int,
+  end_ms : Int,
+) -> Double {
+  let from = start_ms * sample_rate / 1000
+  let raw_to = end_ms * sample_rate / 1000
+  let to = if raw_to < mono.length() { raw_to } else { mono.length() }
+  frame_rms_db(mono, from, to)
 }
 
 ///|
