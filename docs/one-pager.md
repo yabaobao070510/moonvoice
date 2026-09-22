@@ -26,6 +26,11 @@ WAV 解码 → 重采样 → 语音活动检测（VAD）→ 语音段
 **范围边界（明确不做）**：不做语音增强 / 人声析出——VAD 只回答"哪里是语音"，不改变信号；
 噪声大到盖过人声、无有效噪声底可跟踪时，该判定会退化。复杂环境的增强列入 v0.2 路线图。
 
+**AI 工具在开发过程中的作用**：代码、测试与文档的**初稿由 Claude Code（agent 框架，后端模型为
+DeepSeek）产出**；**目标、路径与质量由参赛者掌握**——选题拍板、参照实现与容差选取、验收标准、
+以及对 AI 产出的每一次质疑与纠偏均为参赛者决策（完整证据：8 条关键判断 + 8 处 AI 出错记录，
+见 `docs/retrospective.md`）。
+
 **工程重点在"可验证"**（而不是"能跑"）：
 
 | 环节 | 独立参照实现 | 实测 |
@@ -65,6 +70,12 @@ no network, and no model weights.
 **Scope limit**: no speech enhancement / separation — VAD answers *where speech is* and does not
 modify the signal; when noise is louder than the speech (no usable noise floor), the decision
 degrades. Enhancement for noisy environments is on the v0.2 roadmap.
+
+**Role of AI tools**: first drafts of code, tests and docs were produced with **Claude Code**
+(agent framework; model backend: DeepSeek); **goals, route and quality are held by the participant** —
+topic choice, reference implementations, tolerances, acceptance criteria, and every challenge and
+correction of AI output were participant decisions (full evidence: 8 key judgment calls + 8 recorded
+AI failures in `docs/retrospective.md`).
 
 **Verification first**: every stage is checked against an independent reference —
 libsndfile (WAV), scipy (resampling), numpy (STFT), librosa (mel/MFCC), pyloudnorm (EBU R128) —
