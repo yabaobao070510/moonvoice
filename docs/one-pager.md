@@ -47,7 +47,7 @@ VAD 不用别的 VAD 当标准答案——现成 VAD 是带偏好的黑盒，拿
 **性能**（`benches/` 可复跑）：VAD **1171× 实时**（wasm）/ 1916×（native）；
 重采样 244×/509× 实时；WAV 解码 210/234 MB/s。
 
-**交付物**：5 个库包 + **3 个可运行技能**（`vad` / `resample` / `loudness`）+ 89 项测试 × 四后端全绿 + README + 开发复盘。
+**交付物**：5 个库包 + **3 个可运行技能**（`vad` / `resample` / `loudness`）+ 90 项测试 × 四后端全绿 + README + 开发复盘。
 
 **开源**：Apache-2.0。参考实现（libsndfile / scipy / numpy / librosa / pyloudnorm）仅用于生成测试期望值，
 其代码不进入本库；运行期唯一依赖 `moonbit-community/miniio`，且只被技能壳使用。
@@ -82,4 +82,4 @@ libsndfile (WAV), scipy (resampling), numpy (STFT), librosa (mel/MFCC), pyloudno
 plus property tests such as perfect STFT reconstruction (SNR ≥ 100 dB).
 VAD is validated against *constructed ground truth*, not another VAD.
 
-**Performance**: VAD at 1171× realtime (wasm) / 1916× (native); 89 tests green across four backends.
+**Performance**: VAD at 1171× realtime (wasm) / 1916× (native); 90 tests green across four backends.

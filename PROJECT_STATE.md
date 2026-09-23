@@ -6,7 +6,7 @@
 
 - **阶段**：**交付就绪**（五个库包 + 三个技能 + SKILL.md + README + 开发复盘）
 - **交付截止**：2026-09-30
-- **测试**：**89 项 × 四后端（wasm / wasm-gc / js / native）全绿**；`moon check --deny-warn` 零警告
+- **测试**：**90 项 × 四后端（wasm / wasm-gc / js / native）全绿**；`moon check --deny-warn` 零警告
 - **发布链路**：`moon package` 已验证通过（产物 `_build/publish/yabaobao-moonvoice-0.1.0.zip`），
   只差 `moon register` 账号即可 `moon publish`
 - **剩余**：发布 mooncakes（需账号）；v0.2 路线图：语音增强（降噪，基于现有 STFT/VAD 原语；v0.1 明确不做——见决策记录）、基础库扩展（流式/PCM/FLAC）
@@ -23,7 +23,7 @@
 | D4 | `vad` + `segments`：三引擎 VAD + 段模型 | 合成基准四类场景 |
 | D5 | `cmd/vad`、`cmd/resample` 技能 + SKILL.md + README | 端到端实测 + libsndfile 复核 |
 | D5+ | `feature` 扩展：窗函数/STFT/mel/MFCC/双二阶/EBU R128 响度 | 对拍 librosa / pyloudnorm |
-| D5+ | `cmd/loudness` 第三个技能 + 开发复盘 + 一页说明 | 89 项测试四后端全绿 |
+| D5+ | `cmd/loudness` 第三个技能 + 开发复盘 + 一页说明 | 90 项测试四后端全绿 |
 
 ### VAD 关键实测（详见 vad/vad.mbt 注释）
 
