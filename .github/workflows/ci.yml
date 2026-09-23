@@ -16,12 +16,18 @@ jobs:
         # 所以 wasm 沙箱里也能跑同一套断言）
         backend: [wasm, wasm-gc, js, native]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install MoonBit toolchain
         run: |
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Update registry index
+        # 全新 runner 的 registry 索引为空——不先 update，check 会在依赖解析阶段
+        # 直接失败（"Failed to resolve registry dependency ... not found"）。
+        # 2026-09-23 本地沙箱复现 + 验证：update 后 check --deny-warn 通过。
+        run: moon update
 
       - name: Show toolchain version
         run: moon version
